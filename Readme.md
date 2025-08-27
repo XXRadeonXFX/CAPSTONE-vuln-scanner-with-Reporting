@@ -119,6 +119,8 @@ The scan results will be saved in MongoDB and shown on the dashboard.
    ```env
    SLACK_WEBHOOK_URL=https://hooks.slack.com/services/XXXX/YYYY/ZZZZ
    ```
+   ![slack](screenshots/slack.png)
+
 6. Restart backend:
 
    ```bash
@@ -164,5 +166,6 @@ If this works → notifications are set up correctly.
 ---
 
 👉 Question: Do you want me to **patch `backend/app.py`** so it prints a clear message like *“Slack Webhook not configured”* if the variable is empty? That would make debugging easier.
+
 
 
