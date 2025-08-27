@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Vulnerability Scanner{% endblock %}</title>
+    
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.1/font/bootstrap-icons.min.css" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.min.js"></script>
+    
+    <style>
+        :root {
+            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --success-gradient: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            --warning-gradient: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+            --danger-gradient: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+            --dark-bg: #1a1d23;
+            --card-bg: rgba(255, 255, 255, 0.95);
+            --sidebar-width: 250px;
+        }
+
+        body {
+            background: var(--primary-gradient);
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            width: var(--sidebar-width);
+            background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(10px);
+            z-index: 1000;
+            transition: transform 0.3s ease;
+            overflow-y: auto;
+        }
+
+        .sidebar-brand {
+            padding: 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .sidebar-nav {
+            padding: 1rem 0;
+        }
+
+        .sidebar-nav .nav-link {
+            color: rgba(255, 255, 255, 0.8);
+            padding: 0.75rem 1.5rem;
+            border-radius: 0;
+            transition: all 0.3s ease;
+            border-left: 3px solid transparent;
+        }
+
+        .sidebar-nav .nav-link:hover,
+        .sidebar-nav .nav-link.active {
+            color: white;
+            background: rgba(255, 255, 255, 0.1);
+            border-left-color: #667eea;
+            transform: translateX(5px);
+        }
+
+        .main-content {
+            margin-left: var(--sidebar-width);
+            padding: 2rem;
+            min-height: 100vh;
+        }
+
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 48px rgba(0, 0, 0, 0.15);
+        }
+
+        .gradient-card {
+            background: var(--primary-gradient);
+            color: white;
+        }
+
+        .stat-card {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--primary-gradient);
+        }
+
+        .severity-critical { background: var(--danger-gradient) !important; }
+        .severity-high { background: var(--warning-gradient) !important; }
+        .severity-medium { background: var(--success-gradient) !important; }
+        .severity-low { background: linear-gradient(135deg, #56ab2f 0%, #a8e6cf 100%) !important; }
+
+        .scan-form {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .btn-gradient {
+            background: var(--primary-gradient);
+            border: none;
+            color: white;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .btn-gradient:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+            color: white;
+        }
+
+        .vulnerability-item {
+            border-left: 4px solid #dee2e6;
+            transition: all 0.3s ease;
+        }
+
+        .vulnerability-item:hover {
+            background: rgba(0, 0, 0, 0.02);
+            border-left-color: #667eea;
+        }
+
+        .progress-animated {
+            animation: progressBar 2s ease-in-out;
+        }
+
+        @keyframes progressBar {
+            0% { width: 0%; }
+        }
+
+        .badge-pulse {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .alert {
+            border: none;
+            border-radius: 10px;
+            border-left: 4px solid;
+        }
+
+        .alert-success { border-left-color: #28a745; }
+        .alert-danger { border-left-color: #dc3545; }
+        .alert-warning { border-left-color: #ffc107; }
+        .alert-info { border-left-color: #17a2b8; }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+            .sidebar.show {
+                transform: translateX(0);
+            }
+            .main-content {
+                margin-left: 0;
+                padding: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Sidebar Navigation -->
+    <nav class="sidebar">
+        <div class="sidebar-brand">
+            <h4 class="text-white mb-0">
+                <i class="bi bi-shield-check me-2"></i>
+                VulnScanner
+            </h4>
+            <small class="text-muted">Security Analysis Platform</small>
+        </div>
+        
+        <ul class="nav sidebar-nav flex-column">
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'index' %}active{% endif %}" href="{{ url_for('index') }}">
+                    <i class="bi bi-speedometer2 me-2"></i>
+                    Dashboard
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'reports_list' %}active{% endif %}" href="{{ url_for('reports_list') }}">
+                    <i class="bi bi-file-earmark-text me-2"></i>
+                    All Reports
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#" onclick="showScanModal()">
+                    <i class="bi bi-search me-2"></i>
+                    Quick Scan
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#statsModal">
+                    <i class="bi bi-graph-up me-2"></i>
+                    Statistics
+                </a>
+            </li>
+        </ul>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Mobile menu button -->
+        <button class="btn btn-outline-light d-md-none mb-3" type="button" onclick="toggleSidebar()">
+            <i class="bi bi-list"></i>
+        </button>
+
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="alert-container mb-4">
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                            <i class="bi bi-{{ 'exclamation-circle' if category == 'error' else 'check-circle' if category == 'success' else 'info-circle' }} me-2"></i>
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- Quick Scan Modal -->
+    <div class="modal fade" id="quickScanModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-search me-2"></i>
+                        Quick Vulnerability Scan
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="quickScanForm">
+                        <div class="mb-3">
+                            <label for="modalImage" class="form-label">Docker Image</label>
+                            <input type="text" class="form-control" id="modalImage" 
+                                   placeholder="e.g., nginx:latest" required>
+                            <small class="form-text text-muted">Enter the Docker image name with tag</small>
+                        </div>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="modalEnrichCve" checked>
+                            <label class="form-check-label" for="modalEnrichCve">
+                                <strong>Enable CVE Enrichment</strong>
+                                <br><small class="text-muted">Fetch detailed CVE information from NVD database</small>
+                            </label>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-gradient" onclick="submitQuickScan()">
+                        <span class="scan-text">Start Scan</span>
+                        <span class="scan-loading d-none">
+                            <span class="loading-spinner"></span>
+                            Scanning...
+                        </span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistics Modal -->
+    <div class="modal fade" id="statsModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-graph-up me-2"></i>
+                        System Statistics
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="statsContent">
+                        <div class="text-center">
+                            <div class="loading-spinner"></div>
+                            <p class="mt-2">Loading statistics...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        // Utility functions
+        function toggleSidebar() {
+            document.querySelector('.sidebar').classList.toggle('show');
+        }
+
+        function showScanModal() {
+            new bootstrap.Modal(document.getElementById('quickScanModal')).show();
+        }
+
+        async function submitQuickScan() {
+            const image = document.getElementById('modalImage').value;
+            const enrichCve = document.getElementById('modalEnrichCve').checked;
+            const button = document.querySelector('#quickScanModal .btn-gradient');
+            
+            if (!image) {
+                alert('Please enter a Docker image name');
+                return;
+            }
+
+            // Show loading state
+            button.querySelector('.scan-text').classList.add('d-none');
+            button.querySelector('.scan-loading').classList.remove('d-none');
+            button.disabled = true;
+
+            try {
+                const response = await fetch('/scan', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        image: image,
+                        enrich_cve: enrichCve
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.error) {
+                    throw new Error(result.error);
+                }
+
+                // Show success message
+                showAlert('success', `Scan completed for ${image}! Report ID: ${result.report_id}`);
+                
+                // Close modal and redirect
+                bootstrap.Modal.getInstance(document.getElementById('quickScanModal')).hide();
+                setTimeout(() => window.location.reload(), 1000);
+
+            } catch (error) {
+                showAlert('error', `Scan failed: ${error.message}`);
+            } finally {
+                // Reset button state
+                button.querySelector('.scan-text').classList.remove('d-none');
+                button.querySelector('.scan-loading').classList.add('d-none');
+                button.disabled = false;
+            }
+        }
+
+        function showAlert(type, message) {
+            const alertHtml = `
+                <div class="alert alert-${type === 'error' ? 'danger' : type} alert-dismissible fade show" role="alert">
+                    <i class="bi bi-${type === 'error' ? 'exclamation-circle' : 'check-circle'} me-2"></i>
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+            
+            const container = document.querySelector('.alert-container') || 
+                            (() => {
+                                const div = document.createElement('div');
+                                div.className = 'alert-container mb-4';
+                                document.querySelector('.main-content').insertBefore(
+                                    div, 
+                                    document.querySelector('.main-content').firstElementChild.nextElementSibling
+                                );
+                                return div;
+                            })();
+            
+            container.insertAdjacentHTML('beforeend', alertHtml);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                const alert = container.querySelector('.alert:last-child');
+                if (alert) {
+                    bootstrap.Alert.getInstance(alert)?.close();
+                }
+            }, 5000);
+        }
+
+        // Load statistics when modal is shown
+        document.getElementById('statsModal').addEventListener('show.bs.modal', async function() {
+            try {
+                const response = await fetch('/api/stats');
+                const stats = await response.json();
+                
+                const statsHtml = `
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Scanning Activity</h6>
+                            <ul class="list-unstyled">
+                                <li><strong>Total Scans:</strong> ${stats.total_scans || 0}</li>
+                                <li><strong>Recent (7d):</strong> ${stats.recent_scans_7d || 0}</li>
+                                <li><strong>CVE Cache Size:</strong> ${stats.cve_cache_size || 0}</li>
+                            </ul>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Vulnerability Totals</h6>
+                            <ul class="list-unstyled">
+                                <li><span class="badge bg-danger">CRITICAL</span> ${stats.vulnerability_totals?.total_critical || 0}</li>
+                                <li><span class="badge bg-warning">HIGH</span> ${stats.vulnerability_totals?.total_high || 0}</li>
+                                <li><span class="badge bg-info">MEDIUM</span> ${stats.vulnerability_totals?.total_medium || 0}</li>
+                                <li><span class="badge bg-success">LOW</span> ${stats.vulnerability_totals?.total_low || 0}</li>
+                            </ul>
+                        </div>
+                    </div>
+                `;
+                
+                document.getElementById('statsContent').innerHTML = statsHtml;
+            } catch (error) {
+                document.getElementById('statsContent').innerHTML = 
+                    '<div class="alert alert-danger">Failed to load statistics</div>';
+            }
+        });
+
+        // Auto-refresh functionality
+        let autoRefreshInterval;
+        function startAutoRefresh() {
+            autoRefreshInterval = setInterval(() => {
+                if (document.querySelector('[data-auto-refresh="true"]')) {
+                    window.location.reload();
+                }
+            }, 30000); // Refresh every 30 seconds
+        }
+
+        function stopAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+            }
+        }
+
+        // Initialize auto-refresh
+        document.addEventListener('DOMContentLoaded', function() {
+            if (document.querySelector('[data-auto-refresh="true"]')) {
+                startAutoRefresh();
+            }
+        });
+    </script>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

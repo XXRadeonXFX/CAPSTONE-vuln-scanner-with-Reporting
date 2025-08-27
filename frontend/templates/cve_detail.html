@@ -1,0 +1,474 @@
+{% extends "base.html" %}
+
+{% block title %}{{ cve_id }} - CVE Details{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ url_for('index') }}" class="text-white">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="{{ url_for('reports_list') }}" class="text-white">Reports</a></li>
+                <li class="breadcrumb-item active text-white-50">{{ cve_id }}</li>
+            </ol>
+        </nav>
+        <h1 class="h2 text-white mb-1">
+            <i class="bi bi-shield-exclamation me-2"></i>
+            {{ cve_id }}
+        </h1>
+        <p class="text-white-50 mb-0">Common Vulnerabilities and Exposures Database</p>
+    </div>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-light" onclick="window.history.back()">
+            <i class="bi bi-arrow-left me-1"></i>
+            Back
+        </button>
+        <button class="btn btn-outline-light" onclick="window.print()">
+            <i class="bi bi-printer me-1"></i>
+            Print
+        </button>
+    </div>
+</div>
+
+<!-- CVE Header Card -->
+<div class="card mb-4">
+    <div class="card-header bg-transparent">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h4 class="card-title mb-1">{{ cve.id or cve_id }}</h4>
+                <div class="d-flex gap-2 align-items-center">
+                    {% if cve.cvss_scores %}
+                        {% for version, score in cve.cvss_scores.items() %}
+                            <span class="badge bg-{{ score.severity | severity_badge }} fs-6">
+                                CVSS {{ version.upper() }}: {{ score.score }}/10
+                            </span>
+                        {% endfor %}
+                    {% endif %}
+                    <span class="text-muted">
+                        <i class="bi bi-calendar me-1"></i>
+                        Published: {{ cve.published[:10] if cve.published else 'Unknown' }}
+                    </span>
+                </div>
+            </div>
+            <div class="text-end">
+                {% if cve.cvss_scores %}
+                    {% set primary_score = cve.cvss_scores.get('v3.1', cve.cvss_scores.get('v2', {})) %}
+                    {% if primary_score.score %}
+                        <div class="h2 mb-0 text-{{ primary_score.severity | severity_badge }}">
+                            {{ primary_score.score }}
+                        </div>
+                        <small class="text-muted">CVSS Score</small>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    {% if cve.description %}
+    <div class="card-body">
+        <h6 class="text-muted mb-2">Description</h6>
+        <p class="mb-0">{{ cve.description }}</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- CVSS Scores Details -->
+{% if cve.cvss_scores %}
+<div class="row mb-4">
+    {% for version, score in cve.cvss_scores.items() %}
+    <div class="col-md-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header bg-transparent">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-speedometer me-2"></i>
+                    CVSS {{ version.upper() }} Metrics
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="text-center mb-3">
+                    <div class="display-4 text-{{ score.severity | severity_badge }}">
+                        {{ score.score }}
+                    </div>
+                    <div class="h5">
+                        <span class="badge bg-{{ score.severity | severity_badge }}">
+                            {{ score.severity }}
+                        </span>
+                    </div>
+                </div>
+                
+                {% if score.vector %}
+                <div class="mb-3">
+                    <h6 class="text-muted">Attack Vector</h6>
+                    <code class="d-block p-2 bg-light rounded">{{ score.vector }}</code>
+                </div>
+                {% endif %}
+                
+                <!-- CVSS Score Breakdown -->
+                <div class="progress-stacked">
+                    <div class="progress" role="progressbar" style="width: {{ (score.score / 10 * 100) }}%">
+                        <div class="progress-bar bg-{{ score.severity | severity_badge }}"></div>
+                    </div>
+                </div>
+                <div class="d-flex justify-content-between mt-1">
+                    <small class="text-muted">0.0</small>
+                    <small class="text-muted">{{ score.score }}/10.0</small>
+                    <small class="text-muted">10.0</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- Additional Information Row -->
+<div class="row mb-4">
+    <!-- References -->
+    {% if cve.references %}
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header bg-transparent">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-link-45deg me-2"></i>
+                    References ({{ cve.references | length }})
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="list-group list-group-flush">
+                    {% for ref in cve.references[:10] %}
+                    <div class="list-group-item border-0 px-0">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <a href="{{ ref.url }}" target="_blank" class="text-decoration-none">
+                                    <i class="bi bi-box-arrow-up-right me-1"></i>
+                                    {{ ref.source or 'External Reference' }}
+                                </a>
+                                {% if ref.tags %}
+                                <div class="mt-1">
+                                    {% for tag in ref.tags[:3] %}
+                                    <span class="badge bg-secondary me-1">{{ tag }}</span>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                    {% if cve.references | length > 10 %}
+                    <div class="list-group-item border-0 px-0 text-center">
+                        <button class="btn btn-sm btn-outline-primary" onclick="showAllReferences()">
+                            <i class="bi bi-three-dots me-1"></i>
+                            Show {{ cve.references | length - 10 }} more references
+                        </button>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    
+    <!-- Technical Details -->
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header bg-transparent">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-info-circle me-2"></i>
+                    Technical Details
+                </h5>
+            </div>
+            <div class="card-body">
+                <dl class="row">
+                    <dt class="col-sm-4">CVE ID:</dt>
+                    <dd class="col-sm-8"><code>{{ cve.id or cve_id }}</code></dd>
+                    
+                    <dt class="col-sm-4">Published:</dt>
+                    <dd class="col-sm-8">{{ cve.published | datetime if cve.published else 'Unknown' }}</dd>
+                    
+                    {% if cve.lastModified %}
+                    <dt class="col-sm-4">Last Modified:</dt>
+                    <dd class="col-sm-8">{{ cve.lastModified | datetime }}</dd>
+                    {% endif %}
+                    
+                    {% if cve.cwe %}
+                    <dt class="col-sm-4">CWE:</dt>
+                    <dd class="col-sm-8">
+                        {% for weakness in cve.cwe[:3] %}
+                        <span class="badge bg-info me-1">{{ weakness }}</span>
+                        {% endfor %}
+                    </dd>
+                    {% endif %}
+                </dl>
+                
+                <!-- External Links -->
+                <div class="mt-3">
+                    <h6 class="text-muted mb-2">External Resources</h6>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <a href="https://nvd.nist.gov/vuln/detail/{{ cve_id }}" 
+                           target="_blank" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-box-arrow-up-right me-1"></i>
+                            NVD Details
+                        </a>
+                        <a href="https://cve.mitre.org/cgi-bin/cvename.cgi?name={{ cve_id }}" 
+                           target="_blank" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-box-arrow-up-right me-1"></i>
+                            MITRE CVE
+                        </a>
+                        <a href="https://www.cvedetails.com/cve/{{ cve_id }}/" 
+                           target="_blank" class="btn btn-sm btn-outline-info">
+                            <i class="bi bi-box-arrow-up-right me-1"></i>
+                            CVE Details
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Configurations/Affected Products -->
+{% if cve.configurations %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-transparent">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-gear me-2"></i>
+                    Affected Configurations
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>
+                    Configuration details are available in the full NVD record. 
+                    <a href="https://nvd.nist.gov/vuln/detail/{{ cve_id }}" target="_blank">
+                        View complete configuration data <i class="bi bi-box-arrow-up-right"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Timeline -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-transparent">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-clock-history me-2"></i>
+                    CVE Timeline
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="timeline">
+                    {% if cve.published %}
+                    <div class="timeline-item">
+                        <div class="timeline-marker bg-primary"></div>
+                        <div class="timeline-content">
+                            <h6 class="mb-1">CVE Published</h6>
+                            <p class="mb-1">Initial publication of vulnerability details</p>
+                            <small class="text-muted">{{ cve.published | datetime }}</small>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if cve.lastModified and cve.lastModified != cve.published %}
+                    <div class="timeline-item">
+                        <div class="timeline-marker bg-info"></div>
+                        <div class="timeline-content">
+                            <h6 class="mb-1">Last Updated</h6>
+                            <p class="mb-1">CVE details were modified or updated</p>
+                            <small class="text-muted">{{ cve.lastModified | datetime }}</small>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <div class="timeline-item">
+                        <div class="timeline-marker bg-success"></div>
+                        <div class="timeline-content">
+                            <h6 class="mb-1">Data Retrieved</h6>
+                            <p class="mb-1">Information fetched from NVD API</p>
+                            <small class="text-muted" id="dataRetrievedTimestamp"></small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Hidden references for "Show All" functionality -->
+{% if cve.references and cve.references | length > 10 %}
+<div id="allReferences" class="modal fade" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-link-45deg me-2"></i>
+                    All References ({{ cve.references | length }})
+                </h5>
+                <!-- Modal close button accessibility -->
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" style="max-height: 400px; overflow-y: auto;">
+                <div class="list-group">
+                    {% for ref in cve.references %}
+                    <div class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <a href="{{ ref.url }}" target="_blank" class="text-decoration-none">
+                                    <i class="bi bi-box-arrow-up-right me-1"></i>
+                                    {{ ref.source or 'External Reference' }}
+                                </a>
+                                <div class="mt-1">
+                                    <small class="text-muted d-block">{{ ref.url }}</small>
+                                    {% if ref.tags %}
+                                    <div class="mt-1">
+                                        {% for tag in ref.tags %}
+                                        <span class="badge bg-secondary me-1">{{ tag }}</span>
+                                        {% endfor %}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Show all references modal
+    window.showAllReferences = function() {
+        const modal = new bootstrap.Modal(document.getElementById('allReferences'));
+        modal.show();
+    };
+
+    // Add current timestamp for "Data Retrieved"
+    const now = new Date();
+    const timestamp = now.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+    const timestampElement = document.getElementById('dataRetrievedTimestamp');
+    if (timestampElement) {
+        timestampElement.textContent = timestamp;
+    }
+
+    // Copy CVE ID functionality
+    const cveCode = document.querySelector('code');
+    if (cveCode) {
+        cveCode.style.cursor = 'pointer';
+        cveCode.title = 'Click to copy CVE ID';
+        cveCode.setAttribute('tabindex', '0');
+        cveCode.setAttribute('role', 'button');
+        cveCode.addEventListener('click', function() {
+            navigator.clipboard.writeText(cveCode.textContent).then(() => {
+                const originalText = cveCode.textContent;
+                cveCode.textContent = 'Copied!';
+                cveCode.classList.add('bg-success', 'text-white');
+                setTimeout(() => {
+                    cveCode.textContent = originalText;
+                    cveCode.classList.remove('bg-success', 'text-white');
+                }, 1500);
+            });
+        });
+        cveCode.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                cveCode.click();
+            }
+        });
+    }
+});
+</script>
+
+<style>
+.timeline {
+    position: relative;
+    padding-left: 2rem;
+}
+
+.timeline-item {
+    position: relative;
+    margin-bottom: 2rem;
+    border-left: 2px solid #dee2e6;
+    padding-left: 2rem;
+}
+
+.timeline-item:last-child {
+    border-left-color: transparent;
+}
+
+.timeline-marker {
+    position: absolute;
+    left: -9px;
+    top: 0;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 3px solid #fff;
+    box-shadow: 0 0 0 2px #dee2e6;
+}
+
+.timeline-content {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 8px;
+    position: relative;
+}
+
+.timeline-content::before {
+    content: '';
+    position: absolute;
+    left: -8px;
+    top: 1rem;
+    width: 0;
+    height: 0;
+    border-top: 8px solid transparent;
+    border-bottom: 8px solid transparent;
+    border-right: 8px solid #f8f9fa;
+}
+
+.progress-stacked {
+    height: 8px;
+    background-color: #e9ecef;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.display-4 {
+    font-size: 2.5rem;
+    font-weight: 300;
+}
+
+@media print {
+    .btn, .modal, .timeline-marker {
+        display: none !important;
+    }
+    
+    .timeline-content::before {
+        display: none;
+    }
+    
+    .card {
+        border: 1px solid #dee2e6 !important;
+        break-inside: avoid;
+    }
+}
+
+code {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+code:hover {
+    background-color: #e9ecef !important;
+}
+</style>
+{% endblock %}

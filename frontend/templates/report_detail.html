@@ -1,0 +1,536 @@
+{% extends "base.html" %}
+
+{% block title %}Report {{ report['_id'][:8] }} - Vulnerability Scanner{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ url_for('index') }}" class="text-white">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="{{ url_for('reports_list') }}" class="text-white">Reports</a></li>
+                <li class="breadcrumb-item active text-white-50">{{ report['_id'][:8] }}...</li>
+            </ol>
+        </nav>
+        <h1 class="h2 text-white mb-1">
+            <i class="bi bi-file-earmark-text me-2"></i>
+            Vulnerability Report
+        </h1>
+        <p class="text-white-50 mb-0">Detailed security analysis for {{ report.image }}</p>
+    </div>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-light" onclick="window.print()">
+            <i class="bi bi-printer me-1"></i>
+            Print
+        </button>
+        <button class="btn btn-outline-light" onclick="exportReport()">
+            <i class="bi bi-download me-1"></i>
+            Export
+        </button>
+    </div>
+</div>
+
+<!-- Report Summary Cards -->
+<div class="row mb-4">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header bg-transparent">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-box me-2"></i>
+                        {{ report['image'] }}
+                    </h5>
+                    <div class="d-flex gap-2">
+                        {% set risk_level, risk_class = report.summary | risk_level %}
+                        <span class="badge bg-{{ risk_class }} fs-6">{{ risk_level }} Risk</span>
+                        {% if report.enriched %}
+                            <span class="badge bg-info fs-6" title="Enhanced with CVE database">
+                                <i class="bi bi-database me-1"></i>CVE Enhanced
+                            </span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-3">Scan Information</h6>
+                        <ul class="list-unstyled">
+                            <li><strong>Report ID:</strong> <code>{{ report['_id'] }}</code></li>
+                            <li><strong>Scan Duration:</strong> {{ report.elapsed }}s</li>
+                            <li><strong>Scan Date:</strong> {{ report.created_at | datetime }}</li>
+                            <li><strong>Total Vulnerabilities:</strong> {{ report.vulnerability_count }}</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-3">Vulnerability Breakdown</h6>
+                        <div class="row g-2">
+                            {% for severity, count in report.summary.items() %}
+                            <div class="col-6">
+                                <div class="text-center p-2 rounded bg-light">
+                                    <div class="badge bg-{{ severity | severity_badge }} mb-1">{{ severity }}</div>
+                                    <div class="h4 mb-0">{{ count }}</div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header bg-transparent">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-shield-check me-2"></i>
+                    Security Score
+                </h5>
+            </div>
+            <div class="card-body d-flex align-items-center justify-content-center">
+                <div class="text-center">
+                    {% set risk_level, risk_class = report.summary | risk_level %}
+                    {% set total_vulns = report.summary.CRITICAL + report.summary.HIGH + report.summary.MEDIUM + report.summary.LOW %}
+                    {% set score = 100 - (report.summary.CRITICAL * 20 + report.summary.HIGH * 10 + report.summary.MEDIUM * 5 + report.summary.LOW * 1) %}
+                    {% set score = [score, 0] | max %}
+                    
+                    <div class="position-relative d-inline-block">
+                        <canvas id="scoreChart" width="120" height="120"></canvas>
+                        <div class="position-absolute top-50 start-50 translate-middle text-center">
+                            <div class="h2 mb-0 text-{{ risk_class }}">{{ score }}</div>
+                            <small class="text-muted">Score</small>
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <p class="mb-1"><strong>Risk Level: {{ risk_level }}</strong></p>
+                        <small class="text-muted">Based on {{ total_vulns }} vulnerabilities</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Vulnerability Details -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-transparent">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-bug me-2"></i>
+                        Vulnerability Details ({{ report.vulnerability_count }})
+                    </h5>
+                    <div class="d-flex gap-2">
+                        <select class="form-select form-select-sm" id="severityFilter" onchange="filterVulnerabilities()">
+                            <option value="">All Severities</option>
+                            <option value="CRITICAL">Critical</option>
+                            <option value="HIGH">High</option>
+                            <option value="MEDIUM">Medium</option>
+                            <option value="LOW">Low</option>
+                        </select>
+                        <button class="btn btn-sm btn-outline-primary" onclick="toggleExpandAll()">
+                            <i class="bi bi-arrows-expand" id="expandIcon"></i>
+                            <span id="expandText">Expand All</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                {% if report.all_vulnerabilities %}
+                    <div class="vulnerability-list">
+                        {% for vuln in report.all_vulnerabilities %}
+                        <div class="vulnerability-item border-bottom p-3" data-severity="{{ vuln.Severity }}">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div class="flex-grow-1">
+                                    <div class="d-flex align-items-center mb-2">
+                                        <span class="badge bg-{{ vuln.Severity | severity_badge }} me-2">
+                                            {{ vuln.Severity }}
+                                        </span>
+                                        <h6 class="mb-0 me-2">
+                                            {% if vuln.VulnerabilityID.startswith('CVE-') %}
+                                                <a href="{{ url_for('cve_detail', cve_id=vuln.VulnerabilityID) }}" 
+                                                   class="text-decoration-none">{{ vuln.VulnerabilityID }}</a>
+                                            {% else %}
+                                                {{ vuln.VulnerabilityID }}
+                                            {% endif %}
+                                        </h6>
+                                        {% if vuln.get('cve_details') %}
+                                            <span class="badge bg-info ms-auto" title="Enhanced with CVE data">
+                                                <i class="bi bi-database"></i>
+                                            </span>
+                                        {% endif %}
+                                    </div>
+                                    
+                                    <p class="text-muted mb-2">
+                                        <strong>Package:</strong> {{ vuln.PkgName or 'N/A' }} 
+                                        <span class="ms-3"><strong>Version:</strong> {{ vuln.InstalledVersion or 'N/A' }}</span>
+                                        {% if vuln.FixedVersion %}
+                                            <span class="ms-3 text-success">
+                                                <i class="bi bi-arrow-right"></i>
+                                                <strong>Fix:</strong> {{ vuln.FixedVersion }}
+                                            </span>
+                                        {% endif %}
+                                    </p>
+                                    
+                                    <p class="mb-2">{{ vuln.Title or vuln.Description or 'No description available' }}</p>
+                                    
+                                    <!-- CVE Enhanced Details -->
+                                    {% if vuln.get('cve_details') %}
+                                        <div class="cve-details bg-light p-3 rounded mt-2" style="display: none;">
+                                            <h6><i class="bi bi-info-circle me-1"></i>Enhanced CVE Information</h6>
+                                            
+                                            {% if vuln.cve_details.cvss_scores %}
+                                                <div class="row mb-3">
+                                                    {% for version, score in vuln.cve_details.cvss_scores.items() %}
+                                                    <div class="col-md-6">
+                                                        <div class="card card-body bg-white">
+                                                            <h6 class="card-title">CVSS {{ version.upper() }}</h6>
+                                                            <div class="d-flex justify-content-between">
+                                                                <span>Score:</span>
+                                                                <strong class="text-{{ score.severity | severity_badge }}">
+                                                                    {{ score.score }}/10.0
+                                                                </strong>
+                                                            </div>
+                                                            <div class="d-flex justify-content-between">
+                                                                <span>Severity:</span>
+                                                                <span class="badge bg-{{ score.severity | severity_badge }}">
+                                                                    {{ score.severity }}
+                                                                </span>
+                                                            </div>
+                                                            {% if score.vector %}
+                                                                <div class="mt-2">
+                                                                    <small class="text-muted">Vector: <code>{{ score.vector }}</code></small>
+                                                                </div>
+                                                            {% endif %}
+                                                        </div>
+                                                    </div>
+                                                    {% endfor %}
+                                                </div>
+                                            {% endif %}
+                                            
+                                            {% if vuln.cve_details.description %}
+                                                <div class="mb-3">
+                                                    <h6>Description</h6>
+                                                    <p class="mb-0">{{ vuln.cve_details.description }}</p>
+                                                </div>
+                                            {% endif %}
+                                            
+                                            {% if vuln.cve_details.references %}
+                                                <div class="mb-3">
+                                                    <h6>References</h6>
+                                                    <ul class="list-unstyled">
+                                                        {% for ref in vuln.cve_details.references[:5] %}
+                                                        <li>
+                                                            <a href="{{ ref.url }}" target="_blank" class="text-decoration-none">
+                                                                <i class="bi bi-link-45deg me-1"></i>
+                                                                {{ ref.source or 'Reference' }}
+                                                            </a>
+                                                            {% if ref.tags %}
+                                                                <small class="text-muted ms-2">({{ ref.tags | join(', ') }})</small>
+                                                            {% endif %}
+                                                        </li>
+                                                        {% endfor %}
+                                                    </ul>
+                                                </div>
+                                            {% endif %}
+                                            
+                                            <div class="text-muted small">
+                                                <i class="bi bi-calendar me-1"></i>
+                                                Published: {{ vuln.cve_details.published or 'N/A' }}
+                                                {% if vuln.cve_details.lastModified %}
+                                                    | Modified: {{ vuln.cve_details.lastModified }}
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                                
+                                <div class="ms-3 d-flex flex-column gap-1">
+                                    {% if vuln.get('cve_details') %}
+                                        <button class="btn btn-sm btn-outline-info" onclick="toggleCveDetails(this)">
+                                            <i class="bi bi-eye"></i>
+                                            <span>CVE Details</span>
+                                        </button>
+                                    {% endif %}
+                                    {% if vuln.get('References') %}
+                                        <div class="dropdown">
+                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" 
+                                                    data-bs-toggle="dropdown">
+                                                <i class="bi bi-link-45deg"></i>
+                                                Links
+                                            </button>
+                                            <ul class="dropdown-menu">
+                                                {% for ref in vuln.References %}
+                                                <li>
+                                                    <a class="dropdown-item" href="{{ ref }}" target="_blank">
+                                                        <i class="bi bi-box-arrow-up-right me-1"></i>
+                                                        Reference
+                                                    </a>
+                                                </li>
+                                                {% endfor %}
+                                            </ul>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-center py-5 text-muted">
+                        <i class="bi bi-shield-check fs-1 mb-3 text-success"></i>
+                        <h4>No vulnerabilities found!</h4>
+                        <p class="mb-0">This image appears to be secure.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const report = {{ report | tojson }};
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Security Score Chart
+    const ctx = document.getElementById('scoreChart').getContext('2d');
+    const report = {{ report | tojson }};
+    
+    // Calculate score
+    const totalVulns = report.summary.CRITICAL + report.summary.HIGH + report.summary.MEDIUM + report.summary.LOW;
+    const score = Math.max(100 - (report.summary.CRITICAL * 20 + report.summary.HIGH * 10 + report.summary.MEDIUM * 5 + report.summary.LOW * 1), 0);
+    
+    new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            datasets: [{
+                data: [score, 100 - score],
+                backgroundColor: [
+                    score >= 80 ? '#28a745' : score >= 60 ? '#ffc107' : score >= 40 ? '#fd7e14' : '#dc3545',
+                    '#e9ecef'
+                ],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            cutout: '70%',
+            responsive: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: { enabled: false }
+            },
+            animation: {
+                animateRotate: true,
+                duration: 1500
+            }
+        }
+    });
+});
+
+// Vulnerability filtering
+function filterVulnerabilities() {
+    const filter = document.getElementById('severityFilter').value;
+    const items = document.querySelectorAll('.vulnerability-item');
+    
+    items.forEach(item => {
+        const severity = item.getAttribute('data-severity');
+        if (!filter || severity === filter) {
+            item.style.display = 'block';
+        } else {
+            item.style.display = 'none';
+        }
+    });
+}
+
+// Toggle CVE details
+function toggleCveDetails(button) {
+    const cveDetails = button.closest('.vulnerability-item').querySelector('.cve-details');
+    const icon = button.querySelector('i');
+    const text = button.querySelector('span');
+    
+    if (cveDetails.style.display === 'none') {
+        cveDetails.style.display = 'block';
+        icon.className = 'bi bi-eye-slash';
+        text.textContent = 'Hide Details';
+        button.classList.remove('btn-outline-info');
+        button.classList.add('btn-info');
+    } else {
+        cveDetails.style.display = 'none';
+        icon.className = 'bi bi-eye';
+        text.textContent = 'CVE Details';
+        button.classList.remove('btn-info');
+        button.classList.add('btn-outline-info');
+    }
+}
+
+// Toggle expand all
+let allExpanded = false;
+function toggleExpandAll() {
+    const cveDetails = document.querySelectorAll('.cve-details');
+    const buttons = document.querySelectorAll('.vulnerability-item button[onclick*="toggleCveDetails"]');
+    const expandIcon = document.getElementById('expandIcon');
+    const expandText = document.getElementById('expandText');
+    
+    allExpanded = !allExpanded;
+    
+    cveDetails.forEach((details, index) => {
+        const button = buttons[index];
+        if (!button) return;
+        
+        const icon = button.querySelector('i');
+        const text = button.querySelector('span');
+        
+        if (allExpanded) {
+            details.style.display = 'block';
+            icon.className = 'bi bi-eye-slash';
+            text.textContent = 'Hide Details';
+            button.classList.remove('btn-outline-info');
+            button.classList.add('btn-info');
+        } else {
+            details.style.display = 'none';
+            icon.className = 'bi bi-eye';
+            text.textContent = 'CVE Details';
+            button.classList.remove('btn-info');
+            button.classList.add('btn-outline-info');
+        }
+    });
+    
+    if (allExpanded) {
+        expandIcon.className = 'bi bi-arrows-collapse';
+        expandText.textContent = 'Collapse All';
+    } else {
+        expandIcon.className = 'bi bi-arrows-expand';
+        expandText.textContent = 'Expand All';
+    }
+}
+
+// Export functionality
+function exportReport() {
+    const report = {{ report | tojson }};
+    const exportData = {
+        report_id: report.id,
+        image: report.image,
+        scan_date: report.created_at,
+        duration: report.elapsed + 's',
+        summary: report.summary,
+        enriched: report.enriched,
+        vulnerabilities: report.all_vulnerabilities.map(v => ({
+            id: v.VulnerabilityID,
+            severity: v.Severity,
+            package: v.PkgName,
+            installed_version: v.InstalledVersion,
+            fixed_version: v.FixedVersion,
+            title: v.Title,
+            description: v.Description,
+            cve_enhanced: !!v.cve_details
+        }))
+    };
+    
+    const dataStr = JSON.stringify(exportData, null, 2);
+    const dataBlob = new Blob([dataStr], {type: 'application/json'});
+    
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(dataBlob);
+    link.download = `vulnerability-report-${report.image.replace(/[^a-zA-Z0-9]/g, '-')}-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Add some interactive enhancements
+document.addEventListener('DOMContentLoaded', function() {
+    // Add copy functionality to report ID
+    const reportId = document.querySelector('code');
+    if (reportId) {
+        reportId.style.cursor = 'pointer';
+        reportId.title = 'Click to copy';
+        reportId.addEventListener('click', function() {
+            navigator.clipboard.writeText(reportId.textContent).then(() => {
+                const originalText = reportId.textContent;
+                reportId.textContent = 'Copied!';
+                setTimeout(() => {
+                    reportId.textContent = originalText;
+                }, 1000);
+            });
+        });
+    }
+    
+    // Add hover effects to vulnerability items
+    const vulnItems = document.querySelectorAll('.vulnerability-item');
+    vulnItems.forEach(item => {
+        item.addEventListener('mouseenter', function() {
+            this.style.backgroundColor = 'rgba(102, 126, 234, 0.05)';
+        });
+        item.addEventListener('mouseleave', function() {
+            this.style.backgroundColor = '';
+        });
+    });
+});
+</script>
+
+<style>
+@media print {
+    .sidebar, .btn, .dropdown-toggle, .breadcrumb {
+        display: none !important;
+    }
+    
+    .main-content {
+        margin-left: 0 !important;
+    }
+    
+    .card {
+        border: 1px solid #dee2e6 !important;
+        break-inside: avoid;
+    }
+    
+    .vulnerability-item {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+    
+    .cve-details {
+        display: block !important;
+    }
+}
+
+.vulnerability-item {
+    transition: all 0.2s ease;
+}
+
+.cve-details {
+    border-left: 4px solid #17a2b8;
+    animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.badge {
+    font-size: 0.75em;
+}
+
+code {
+    background: #f8f9fa;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.875em;
+}
+
+.card-body.bg-white {
+    border: 1px solid #e9ecef;
+}
+</style>
+{% endblock %}
