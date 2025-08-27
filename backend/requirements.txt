@@ -1,4 +1,5 @@
-Flask
+flask
 python-dotenv
-requests
 pymongo
+requests
+aiohttp
