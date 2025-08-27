@@ -33,7 +33,7 @@ def run_scan(image_name):
     elapsed = round(time.time() - start_time, 2)
 
     # Count vulnerabilities
-    summary = {"LOW":0, "MEDIUM":0, "HIGH":0, "CRITICAL":0}
+    summary = {"LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0}
     for r in data.get("Results", []):
         for v in r.get("Vulnerabilities", []):
             sev = v.get("Severity")
@@ -56,16 +56,21 @@ def run_scan(image_name):
     if SLACK_WEBHOOK_URL:
         message = (
             f"*🔍 Scan Completed*\n"
-            f"Image: `{image_name}`\n"
-            f"Time: {elapsed} sec\n"
-            f"Summary → LOW: {summary['LOW']}, MEDIUM: {summary['MEDIUM']}, "
-            f"HIGH: {summary['HIGH']}, CRITICAL: {summary['CRITICAL']}\n"
+            f"• Image: `{image_name}`\n"
+            f"• Time: {elapsed} sec\n\n"
+            f"*Summary:*\n"
+            f"   LOW: {summary['LOW']}\n"
+            f"   MEDIUM: {summary['MEDIUM']}\n"
+            f"   HIGH: {summary['HIGH']}\n"
+            f"   CRITICAL: {summary['CRITICAL']}\n\n"
             f"Report ID: `{report_id}`"
         )
         try:
-            requests.post(SLACK_WEBHOOK_URL, json={"text": message})
+            response = requests.post(SLACK_WEBHOOK_URL, json={"text": message})
+            if response.status_code != 200:
+                print(f"[!] Slack notification failed: {response.text}")
         except Exception as e:
-            print(f"Slack notification failed: {e}")
+            print(f"[!] Slack notification error: {str(e)}")
 
     return {
         "image": image_name,
