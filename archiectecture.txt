@@ -1,0 +1,24 @@
+                 ┌─────────────────────┐
+                 │   Developer Push    │
+                 └─────────┬───────────┘
+                           │
+                    ┌──────▼───────┐
+                    │   Jenkins    │
+                    │  (CI/CD)     │
+                    └──────┬───────┘
+                           │
+               ┌───────────┴───────────┐
+               │ Vulnerability Scanner │
+               │   (Trivy / Clair)     │
+               └───────────┬───────────┘
+                           │
+       ┌───────────┬───────────────┬───────────┐
+       │           │               │           │
+  Reports (JSON)  Alerts (Slack)  Metrics → Prometheus
+       │                               │
+       │                               ▼
+       │                           Grafana UI
+       │                       (Historical Trends)
+       ▼
+   PDF/HTML Reports
+   stored in repo/S3
