@@ -16,7 +16,7 @@ resource "aws_instance" "jenkins" {
   vpc_security_group_ids = [var.sg_id]
 
   tags = {
-    Name = "${var.project}-jenkins"
+    Name = "prince-${var.project}-jenkins"
   }
 }
 
@@ -29,7 +29,7 @@ resource "aws_instance" "monitoring" {
   vpc_security_group_ids = [var.sg_id]
 
   tags = {
-    Name = "${var.project}-monitoring"
+    Name = "prince-${var.project}-monitoring"
   }
 }
 
