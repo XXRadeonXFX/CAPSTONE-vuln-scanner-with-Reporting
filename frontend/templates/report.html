@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CyberShield - Scan Report</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 25%, #16213e 50%, #0f3460 100%);
+            color: #ffffff;
+            font-family: 'Orbitron', 'Segoe UI', monospace;
+            min-height: 100vh;
+        }
+
+        .particles {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .particle {
+            position: absolute;
+            width: 2px;
+            height: 2px;
+            background: #00ffff;
+            border-radius: 50%;
+            animation: float 6s ease-in-out infinite;
+            opacity: 0.7;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0) translateX(0); opacity: 0.7; }
+            50% { transform: translateY(-20px) translateX(10px); opacity: 1; }
+        }
+
+        .container {
+            margin-top: 40px;
+            position: relative;
+            z-index: 10;
+        }
+
+        .page-header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .page-title {
+            font-size: 3rem;
+            font-weight: bold;
+            background: linear-gradient(45deg, #00ffff, #ff0080);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+            margin-bottom: 20px;
+        }
+
+        .report-card {
+            background: rgba(0, 20, 40, 0.95);
+            border: 2px solid #00ffff;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 
+                0 0 40px rgba(0, 255, 255, 0.3),
+                inset 0 0 20px rgba(0, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            position: relative;
+            overflow: hidden;
+            margin-bottom: 30px;
+        }
+
+        .report-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(0, 255, 255, 0.1), transparent);
+            animation: scan-line 4s linear infinite;
+        }
+
+        @keyframes scan-line {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+
+        .report-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 30px;
+            position: relative;
+            z-index: 2;
+        }
+
+        .report-icon {
+            font-size: 3rem;
+            color: #00ffff;
+            margin-right: 20px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        .report-title {
+            font-size: 2rem;
+            color: #ffffff;
+            margin: 0;
+        }
+
+        .report-image {
+            color: #00ffff;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+            position: relative;
+            z-index: 2;
+        }
+
+        .info-item {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid #333;
+            transition: all 0.3s ease;
+        }
+
+        .info-item:hover {
+            border-color: #00ffff;
+            box-shadow: 0 5px 15px rgba(0, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .info-label {
+            color: #00ffff;
+            font-weight: bold;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+
+        .info-value {
+            color: #ffffff;
+            font-size: 1.1rem;
+        }
+
+        .severity-section {
+            position: relative;
+            z-index: 2;
+        }
+
+        .severity-title {
+            font-size: 1.8rem;
+            color: #00ffff;
+            margin-bottom: 30px;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .severity-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .severity-card {
+            background: rgba(0, 0, 0, 0.7);
+            padding: 25px;
+            border-radius: 15px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .severity-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .severity-low {
+            border: 2px solid #4caf50;
+            box-shadow: 0 0 20px rgba(76, 175, 80, 0.3);
+        }
+
+        .severity-low:hover {
+            box-shadow: 0 10px 30px rgba(76, 175, 80, 0.5);
+        }
+
+        .severity-medium {
+            border: 2px solid #ffc107;
+            box-shadow: 0 0 20px rgba(255, 193, 7, 0.3);
+        }
+
+        .severity-medium:hover {
+            box-shadow: 0 10px 30px rgba(255, 193, 7, 0.5);
+        }
+
+        .severity-high {
+            border: 2px solid #ff5722;
+            box-shadow: 0 0 20px rgba(255, 87, 34, 0.3);
+        }
+
+        .severity-high:hover {
+            box-shadow: 0 10px 30px rgba(255, 87, 34, 0.5);
+        }
+
+        .severity-critical {
+            border: 2px solid #f44336;
+            box-shadow: 0 0 20px rgba(244, 67, 54, 0.3);
+        }
+
+        .severity-critical:hover {
+            box-shadow: 0 10px 30px rgba(244, 67, 54, 0.5);
+        }
+
+        .severity-icon {
+            font-size: 2.5rem;
+            margin-bottom: 15px;
+        }
+
+        .severity-low .severity-icon {
+            color: #4caf50;
+        }
+
+        .severity-medium .severity-icon {
+            color: #ffc107;
+        }
+
+        .severity-high .severity-icon {
+            color: #ff5722;
+        }
+
+        .severity-critical .severity-icon {
+            color: #f44336;
+        }
+
+        .severity-label {
+            font-size: 1.2rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 10px;
+        }
+
+        .severity-count {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #ffffff;
+        }
+
+        .btn-back {
+            background: linear-gradient(45deg, #ff0080, #00ffff);
+            border: none;
+            color: white;
+            font-weight: bold;
+            font-size: 1.1rem;
+            padding: 15px 30px;
+            border-radius: 30px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+            text-decoration: none;
+        }
+
+        .btn-back:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(255, 0, 128, 0.5);
+            color: white;
+            text-decoration: none;
+        }
+
+        .btn-back::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            transition: all 0.5s;
+        }
+
+        .btn-back:hover::before {
+            left: 100%;
+        }
+
+        .scan-status {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .status-complete {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4caf50;
+            border: 1px solid #4caf50;
+        }
+
+        @media (max-width: 768px) {
+            .page-title {
+                font-size: 2rem;
+            }
+            
+            .report-card {
+                padding: 20px;
+            }
+            
+            .report-header {
+                flex-direction: column;
+                text-align: center;
+            }
+            
+            .report-icon {
+                margin-right: 0;
+                margin-bottom: 15px;
+            }
+            
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .severity-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Animated background particles -->
+    <div class="particles">
+        <div class="particle" style="left: 20%; animation-delay: 0s;"></div>
+        <div class="particle" style="left: 40%; animation-delay: 1s;"></div>
+        <div class="particle" style="left: 60%; animation-delay: 2s;"></div>
+        <div class="particle" style="left: 80%; animation-delay: 3s;"></div>
+        <div class="particle" style="left: 10%; top: 30%; animation-delay: 1.5s;"></div>
+        <div class="particle" style="left: 70%; top: 20%; animation-delay: 2.5s;"></div>
+        <div class="particle" style="left: 30%; top: 70%; animation-delay: 0.5s;"></div>
+        <div class="particle" style="left: 90%; top: 60%; animation-delay: 3.5s;"></div>
+    </div>
+
+    <div class="container">
+        <div class="page-header">
+            <div class="page-title">
+                <i class="fas fa-file-alt"></i> Scan Report Analysis
+            </div>
+        </div>
+
+        <div class="report-card">
+            <div class="report-header">
+                <div class="report-icon">
+                    <i class="fab fa-docker"></i>
+                </div>
+                <div>
+                    <h4 class="report-title">Docker Image Analysis</h4>
+                    <div class="report-image">{{ report.image }}</div>
+                    <span class="scan-status status-complete">
+                        <i class="fas fa-check-circle"></i> Scan Complete
+                    </span>
+                </div>
+            </div>
+
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-label">
+                        <i class="fas fa-clock"></i> Scan Duration
+                    </div>
+                    <div class="info-value">{{ report.elapsed }} seconds</div>
+                </div>
+                
+                <div class="info-item">
+                    <div class="info-label">
+                        <i class="fas fa-calendar"></i> Created On
+                    </div>
+                    <div class="info-value">{{ report.created_at }}</div>
+                </div>
+                
+                <div class="info-item">
+                    <div class="info-label">
+                        <i class="fas fa-shield-alt"></i> Security Status
+                    </div>
+                    <div class="info-value">
+                        {% if report.summary.CRITICAL > 0 %}
+                            <span style="color: #f44336;">Critical Issues Found</span>
+                        {% elif report.summary.HIGH > 0 %}
+                            <span style="color: #ff5722;">High Risk</span>
+                        {% elif report.summary.MEDIUM > 0 %}
+                            <span style="color: #ffc107;">Moderate Risk</span>
+                        {% else %}
+                            <span style="color: #4caf50;">Low Risk</span>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="info-item">
+                    <div class="info-label">
+                        <i class="fas fa-bug"></i> Total Issues
+                    </div>
+                    <div class="info-value">
+                        {{ (report.summary.LOW or 0) + (report.summary.MEDIUM or 0) + (report.summary.HIGH or 0) + (report.summary.CRITICAL or 0) }}
+                    </div>
+                </div>
+            </div>
+
+            

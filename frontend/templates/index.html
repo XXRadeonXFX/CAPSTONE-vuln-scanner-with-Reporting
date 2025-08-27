@@ -1,59 +1,443 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Vulnerability Scanner Dashboard</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CyberShield - Vulnerability Scanner</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 25%, #16213e 50%, #0f3460 100%);
+            color: #ffffff;
+            font-family: 'Orbitron', 'Segoe UI', monospace;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Animated background particles */
+        .particles {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .particle {
+            position: absolute;
+            width: 2px;
+            height: 2px;
+            background: #00ffff;
+            border-radius: 50%;
+            animation: float 6s ease-in-out infinite;
+            opacity: 0.7;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0) translateX(0); opacity: 0.7; }
+            50% { transform: translateY(-20px) translateX(10px); opacity: 1; }
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            padding: 40px 0;
+            position: relative;
+            z-index: 10;
+        }
+
+        .logo {
+            font-size: 3.5rem;
+            font-weight: bold;
+            background: linear-gradient(45deg, #00ffff, #ff0080, #ffff00);
+            background-size: 300% 300%;
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+            animation: gradient-shift 3s ease-in-out infinite;
+            text-shadow: 0 0 30px rgba(0, 255, 255, 0.5);
+            margin-bottom: 10px;
+        }
+
+        @keyframes gradient-shift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
+        .subtitle {
+            font-size: 1.4rem;
+            color: #00ffff;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            margin-bottom: 30px;
+            animation: glow 2s ease-in-out infinite alternate;
+        }
+
+        @keyframes glow {
+            from { text-shadow: 0 0 10px #00ffff; }
+            to { text-shadow: 0 0 20px #00ffff, 0 0 30px #00ffff; }
+        }
+
+        /* Scanner section */
+        .scanner-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+            position: relative;
+            z-index: 10;
+        }
+
+        .scanner-box {
+            background: rgba(0, 20, 40, 0.9);
+            border: 2px solid #00ffff;
+            border-radius: 20px;
+            padding: 40px;
+            margin: 40px 0;
+            box-shadow: 
+                0 0 40px rgba(0, 255, 255, 0.3),
+                inset 0 0 20px rgba(0, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .scanner-box::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(0, 255, 255, 0.2), transparent);
+            animation: scan-line 3s linear infinite;
+        }
+
+        @keyframes scan-line {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+
+        .input-group {
+            position: relative;
+            z-index: 2;
+        }
+
+        .form-control {
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid #333;
+            color: #ffffff;
+            font-size: 1.1rem;
+            padding: 15px 20px;
+            border-radius: 10px 0 0 10px;
+            transition: all 0.3s ease;
+        }
+
+        .form-control:focus {
+            background: rgba(0, 0, 0, 0.9);
+            border-color: #00ffff;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+            color: #ffffff;
+        }
+
+        .btn-scan {
+            background: linear-gradient(45deg, #ff0080, #00ffff);
+            border: none;
+            color: white;
+            font-weight: bold;
+            font-size: 1.1rem;
+            padding: 15px 30px;
+            border-radius: 0 10px 10px 0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-scan:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(255, 0, 128, 0.5);
+        }
+
+        .btn-scan::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            transition: all 0.5s;
+        }
+
+        .btn-scan:hover::before {
+            left: 100%;
+        }
+
+        /* Reports section */
+        .reports-section {
+            margin-top: 60px;
+        }
+
+        .section-title {
+            font-size: 2.2rem;
+            text-align: center;
+            margin-bottom: 40px;
+            color: #00ffff;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            position: relative;
+        }
+
+        .section-title::after {
+            content: '';
+            position: absolute;
+            bottom: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100px;
+            height: 3px;
+            background: linear-gradient(45deg, #ff0080, #00ffff);
+        }
+
+        .table-container {
+            background: rgba(0, 20, 40, 0.9);
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.3);
+            backdrop-filter: blur(10px);
+        }
+
+        .table {
+            margin: 0;
+            color: #ffffff;
+            background: transparent;
+        }
+
+        .table thead {
+            background: linear-gradient(45deg, #ff0080, #00ffff);
+        }
+
+        .table thead th {
+            color: #ffffff;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            padding: 20px 15px;
+            border: none;
+        }
+
+        .table tbody tr {
+            background: rgba(0, 0, 0, 0.3);
+            transition: all 0.3s ease;
+            border: none;
+        }
+
+        .table tbody tr:hover {
+            background: rgba(0, 255, 255, 0.1);
+            transform: scale(1.02);
+            box-shadow: 0 5px 15px rgba(0, 255, 255, 0.3);
+        }
+
+        .table tbody td {
+            padding: 15px;
+            border: none;
+            vertical-align: middle;
+        }
+
+        .btn-view {
+            background: linear-gradient(45deg, #00ffff, #ff0080);
+            border: none;
+            color: white;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-weight: bold;
+            text-transform: uppercase;
+            transition: all 0.3s ease;
+        }
+
+        .btn-view:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 255, 255, 0.5);
+            color: white;
+        }
+
+        /* Status indicators */
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+
+        .status-active {
+            background: #00ff00;
+        }
+
+        .status-scanning {
+            background: #ffff00;
+        }
+
+        .status-complete {
+            background: #00ffff;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .logo {
+                font-size: 2.5rem;
+            }
+            
+            .subtitle {
+                font-size: 1rem;
+                letter-spacing: 2px;
+            }
+            
+            .scanner-box {
+                padding: 20px;
+            }
+            
+            .input-group {
+                flex-direction: column;
+            }
+            
+            .form-control, .btn-scan {
+                border-radius: 10px;
+                margin-bottom: 10px;
+            }
+        }
+    </style>
 </head>
-<body class="bg-light">
-<div class="container mt-5">
-  <h1 class="mb-4 text-center">Vulnerability Scanner Dashboard</h1>
+<body>
+    <!-- Animated background particles -->
+    <div class="particles">
+        <div class="particle" style="left: 20%; animation-delay: 0s;"></div>
+        <div class="particle" style="left: 40%; animation-delay: 1s;"></div>
+        <div class="particle" style="left: 60%; animation-delay: 2s;"></div>
+        <div class="particle" style="left: 80%; animation-delay: 3s;"></div>
+        <div class="particle" style="left: 10%; top: 30%; animation-delay: 1.5s;"></div>
+        <div class="particle" style="left: 70%; top: 20%; animation-delay: 2.5s;"></div>
+        <div class="particle" style="left: 30%; top: 70%; animation-delay: 0.5s;"></div>
+        <div class="particle" style="left: 90%; top: 60%; animation-delay: 3.5s;"></div>
+    </div>
 
-  <!-- Scan Form -->
-  <div class="card shadow-sm mb-4">
-    <div class="card-body">
-      <form method="post" class="d-flex">
-        <input type="text" name="image" class="form-control me-2" placeholder="Enter Docker image (e.g., nginx:latest)" required>
-        <button type="submit" class="btn btn-primary">Run Scan</button>
-      </form>
-    </div>
-  </div>
+    <div class="container-fluid">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">
+                <i class="fas fa-shield-alt"></i> CYBERSHIELD
+            </div>
+            <div class="subtitle">
+                Advanced Vulnerability Scanner
+            </div>
+        </div>
 
-  <!-- Reports Table -->
-  <div class="card shadow-sm">
-    <div class="card-header">
-      <h5 class="mb-0">Available Reports</h5>
+        <!-- Scanner Section -->
+        <div class="scanner-container">
+            <div class="scanner-box">
+                <form method="POST" action="/scan">
+                    <div class="input-group">
+                        <input type="text" name="image" class="form-control" 
+                               placeholder="Enter Docker Image (e.g., nginx:latest)" required>
+                        <button type="submit" class="btn btn-scan">
+                            <i class="fas fa-search"></i> Initiate Scan
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Reports Section -->
+            <div class="reports-section">
+                <h3 class="section-title">
+                    <i class="fas fa-file-alt"></i> Scan Reports
+                </h3>
+                
+                <div class="table-container">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th><i class="fas fa-hashtag"></i> Report ID</th>
+                                <th><i class="fas fa-docker"></i> Image</th>
+                                <th><i class="fas fa-clock"></i> Created At</th>
+                                <th><i class="fas fa-cog"></i> Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for r in reports %}
+                            <tr>
+                                <td>
+                                    <span class="status-indicator status-complete"></span>
+                                    {{ r.id[:16] }}...
+                                </td>
+                                <td>
+                                    <i class="fab fa-docker" style="color: #0db7ed; margin-right: 8px;"></i>
+                                    {{ r.image }}
+                                </td>
+                                <td>{{ r.created_at }}</td>
+                                <td>
+                                    <a href="/report/{{ r.id }}" class="btn btn-view">
+                                        <i class="fas fa-eye"></i> Analyze
+                                    </a>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="4" class="text-center" style="padding: 40px;">
+                                    <i class="fas fa-inbox" style="font-size: 2rem; color: #666; margin-bottom: 10px;"></i>
+                                    <br>No scan reports available. Start your first scan above!
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     </div>
-    <div class="card-body p-0">
-      <table class="table table-striped table-hover mb-0">
-        <thead class="table-dark">
-          <tr>
-            <th scope="col">Report ID</th>
-            <th scope="col">Image</th>
-            <th scope="col">Created At</th>
-            <th scope="col">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in reports %}
-          <tr>
-            <td>{{ r.id }}</td>
-            <td>{{ r.image }}</td>
-            <td>{{ r.created_at }}</td>
-            <td>
-              <a href="{{ url_for('report', report_id=r.id) }}" class="btn btn-sm btn-outline-info">View</a>
-            </td>
-          </tr>
-          {% else %}
-          <tr>
-            <td colspan="4" class="text-center text-muted">No reports available yet</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Add more dynamic particles
+        function createParticles() {
+            const particlesContainer = document.querySelector('.particles');
+            
+            for (let i = 0; i < 20; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'particle';
+                particle.style.left = Math.random() * 100 + '%';
+                particle.style.top = Math.random() * 100 + '%';
+                particle.style.animationDelay = Math.random() * 6 + 's';
+                particle.style.animationDuration = (Math.random() * 3 + 3) + 's';
+                particlesContainer.appendChild(particle);
+            }
+        }
+
+        // Initialize particles
+        createParticles();
+
+        // Add scanning effect to buttons
+        document.querySelectorAll('.btn-scan').forEach(button => {
+            button.addEventListener('click', function() {
+                this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Scanning...';
+            });
+        });
+    </script>
 </body>
 </html>
