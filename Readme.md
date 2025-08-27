@@ -8,6 +8,8 @@ CyberShield is a **capstone project** that scans Docker container images for vul
 
 ---
 
+![cybershield.png](screenshots/cybershield.png)
+
 ## 🚀 Features
 
 * 🔍 Automated vulnerability scanning for Docker images
@@ -161,3 +163,4 @@ If this works → notifications are set up correctly.
 ---
 
 👉 Question: Do you want me to **patch `backend/app.py`** so it prints a clear message like *“Slack Webhook not configured”* if the variable is empty? That would make debugging easier.
+
