@@ -16,7 +16,7 @@ resource "aws_instance" "jenkins" {
   ami                    = var.ami_id
   instance_type          = var.instance_type
   key_name               = var.key_name
-  subnet_id              = data.aws_subnet.selected.id
+  subnet_id              = tolist(data.aws_subnets.default.ids)[0]   # first subnet
   vpc_security_group_ids = [var.sg_id]
 
   tags = {
@@ -29,7 +29,7 @@ resource "aws_instance" "monitoring" {
   ami                    = var.ami_id
   instance_type          = var.instance_type
   key_name               = var.key_name
-  subnet_id              = data.aws_subnet.selected.id
+  subnet_id              = tolist(data.aws_subnets.default.ids)[0]   # first subnet
   vpc_security_group_ids = [var.sg_id]
 
   tags = {
