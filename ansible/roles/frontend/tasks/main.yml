@@ -1,0 +1,38 @@
+- name: Install Node.js
+  apt:
+    name: nodejs
+    state: present
+    update_cache: yes
+
+- name: Install npm
+  apt:
+    name: npm
+    state: present
+
+- name: Copy frontend code
+  copy:
+    src: ../../frontend/
+    dest: /opt/frontend/
+    mode: 0755
+
+- name: Install dependencies
+  command: npm install
+  args:
+    chdir: /opt/frontend/
+
+- name: Build React frontend
+  command: npm run build
+  args:
+    chdir: /opt/frontend/
+
+- name: Serve frontend with Nginx
+  apt:
+    name: nginx
+    state: present
+    update_cache: yes
+
+- name: Copy build to nginx html folder
+  copy:
+    src: /opt/frontend/build/
+    dest: /var/www/html/
+    remote_src: yes

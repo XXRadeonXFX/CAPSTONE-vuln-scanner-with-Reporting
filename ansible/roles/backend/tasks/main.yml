@@ -1,0 +1,37 @@
+- name: Install dependencies
+  apt:
+    name: python3-pip
+    state: present
+    update_cache: yes
+
+- name: Copy backend code
+  copy:
+    src: ../../backend/
+    dest: /opt/backend/
+    mode: 0755
+
+- name: Install Python requirements
+  pip:
+    requirements: /opt/backend/requirements.txt
+
+- name: Start backend API (Flask)
+  systemd:
+    name: vuln-backend
+    enabled: yes
+    state: started
+    daemon_reload: yes
+  args:
+    executable: /bin/bash
+  vars:
+    service_file: |
+      [Unit]
+      Description=Vulnerability Scanner Backend
+      After=network.target
+
+      [Service]
+      ExecStart=/usr/bin/python3 /opt/backend/app.py
+      Restart=always
+      User=ubuntu
+
+      [Install]
+      WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Vulnerability Scanner Dashboard</title>
+</head>
+<body>
+    <h1>Vulnerability Scanner</h1>
+    <form method="POST">
+        <label for="image">Enter Docker Image:</label>
+        <input type="text" id="image" name="image" placeholder="nginx:latest" required>
+        <button type="submit">Run Scan</button>
+    </form>
+    <br>
+    <a href="{{ url_for('reports') }}">View Reports</a>
+</body>
+</html>

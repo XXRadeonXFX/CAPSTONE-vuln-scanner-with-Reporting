@@ -1,0 +1,21 @@
+- hosts: jenkins
+  become: yes
+  roles:
+    - jenkins
+
+- hosts: monitoring
+  become: yes
+  roles:
+    - prometheus
+    - grafana
+
+- hosts: backend
+  become: yes
+  roles:
+    - mongodb
+    - backend
+
+- hosts: frontend
+  become: yes
+  roles:
+    - frontend
