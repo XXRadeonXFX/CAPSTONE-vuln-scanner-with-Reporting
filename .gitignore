@@ -1,17 +1,5 @@
-# Ignore Python cache
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Ignore virtual environments
-venv/
-.env/
-
-# Ignore reports and logs
-reports/*.json
-*.log
-
-# Ignore dotenv secret files
 .env
+.terraform/
+.terraform.lock.hcl
+
 
