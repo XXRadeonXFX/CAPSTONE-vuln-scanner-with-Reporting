@@ -1,10 +1,14 @@
-# Keep your existing VPC and Subnet data blocks
-data "aws_vpc" "selected" {
-  id = var.vpc_id
+# Get default VPC
+data "aws_vpc" "default" {
+  default = true
 }
 
-data "aws_subnet" "selected" {
-  id = var.subnet_id
+# Get subnets in the default VPC
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
 }
 
 # Jenkins Server
