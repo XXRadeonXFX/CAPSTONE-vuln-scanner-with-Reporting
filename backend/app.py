@@ -14,9 +14,9 @@ from dotenv import load_dotenv
 from pymongo import MongoClient
 from bson import ObjectId
 import requests
-from database import postgres_db
-import subprocess
-import tempfile
+# PostgreSQL support removed - using MongoDB only
+# import subprocess  # Already imported above
+# import tempfile  # Not used
 
 # ---------------- CONFIG ----------------
 load_dotenv()

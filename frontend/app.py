@@ -147,6 +147,13 @@ def api_stats():
     """API endpoint for dashboard stats"""
     return jsonify(get_backend_data("stats"))
 
+@app.route('/favicon.ico')
+def favicon():
+    """Serve favicon or return 204 No Content to prevent 404 errors."""
+    # Option 1: Return empty response (no favicon)
+    from flask import Response
+    return Response(status=204)
+
 def process_report_data(report_data):
     """Process report data for better frontend display"""
     processed = report_data.copy()
