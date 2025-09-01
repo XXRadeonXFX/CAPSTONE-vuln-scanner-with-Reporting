@@ -7,9 +7,9 @@
 CyberShield is a **capstone project** that scans Docker container images for vulnerabilities using known CVE databases, generates reports, and provides a **web-based dashboard** for analysis. It integrates with **CI/CD pipelines** and supports **Slack notifications** for real-time alerts.
 
 ---
-![vulnscanner.png](screenshots/vulnscanner.png)
+![vulnscanner_dasg](screenshots/vulnscanner_dash.png)
 
-![cybershield.png](screenshots/cybershield.png)
+![cybershield](screenshots/cybershield.png)
 
 ## 🚀 Features
 
@@ -166,6 +166,7 @@ If this works → notifications are set up correctly.
 ---
 
 👉 Question: Do you want me to **patch `backend/app.py`** so it prints a clear message like *“Slack Webhook not configured”* if the variable is empty? That would make debugging easier.
+
 
 
 
