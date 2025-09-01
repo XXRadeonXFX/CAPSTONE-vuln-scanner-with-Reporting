@@ -14,6 +14,9 @@ from dotenv import load_dotenv
 from pymongo import MongoClient
 from bson import ObjectId
 import requests
+from database import postgres_db
+import subprocess
+import tempfile
 
 # ---------------- CONFIG ----------------
 load_dotenv()
@@ -177,7 +180,12 @@ def run_scan(image_name: str, enrich_cve: bool = True) -> dict:
         logger.error("Trivy failed: %s", str(e))
         return {"error": f"Trivy failed: {str(e)}"}
 
-    data = json.loads(result.stdout)
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError as e:
+        logger.error("Failed to parse Trivy output: %s", str(e))
+        return {"error": f"Failed to parse Trivy output: {str(e)}"}
+    
     elapsed = round(time.time() - start_time, 2)
 
     # Count vulnerabilities
@@ -304,9 +312,11 @@ def send_slack_notification(image_name: str, elapsed: float, summary: dict, repo
     payload = {"blocks": blocks}
 
     try:
-        response = requests.post(SLACK_WEBHOOK_URL, json=payload)
+        response = requests.post(SLACK_WEBHOOK_URL, json=payload, timeout=10)
         if response.status_code != 200:
             logger.error("Slack notification failed: %s", response.text)
+        else:
+            logger.info("Slack notification sent successfully")
     except Exception as e:
         logger.error("Slack notification error: %s", str(e))
 
@@ -325,6 +335,7 @@ def get_cve_details(cve_id):
         else:
             return jsonify({"error": "CVE not found or API error"}), 404
     except Exception as e:
+        logger.error(f"Error in get_cve_details: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/cve/search", methods=["GET"])
@@ -337,8 +348,17 @@ def search_cves():
     if not any([keyword, start_date, end_date]):
         return jsonify({"error": "Please provide keyword, start_date, or end_date"}), 400
     
-    # This would require additional NVD API integration
+    # This would require additional NVD API integration for full search functionality
     return jsonify({"message": "CVE search functionality - coming soon"}), 501
+
+@app.route("/cve/cache/clear", methods=["POST"])
+def clear_cve_cache():
+    """Clear the CVE cache."""
+    try:
+        result = cve_cache_collection.delete_many({})
+        return jsonify({"message": f"Cleared {result.deleted_count} cached CVE entries"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # ---------------- ENHANCED ROUTES ----------------
 @app.route("/", methods=["GET"])
@@ -354,9 +374,41 @@ def index():
             "GET /scan?image=<docker_image>&enrich_cve=false": "Run basic scan (browser testing)",
             "GET /cve/<cve_id>": "Get detailed CVE information",
             "GET /cve/search?keyword=<term>": "Search CVEs (coming soon)",
-            "GET /stats": "Get scanning statistics"
+            "POST /cve/cache/clear": "Clear CVE cache",
+            "GET /stats": "Get scanning statistics",
+            "GET /health": "Health check endpoint"
         }
     })
+
+@app.route("/health", methods=["GET"])
+def health_check():
+    """Health check endpoint."""
+    try:
+        # Check MongoDB connection
+        mongo_client.admin.command('ping')
+        mongo_status = "healthy"
+    except Exception as e:
+        mongo_status = f"unhealthy: {str(e)}"
+    
+    # Check Trivy availability
+    try:
+        subprocess.run(["trivy", "--version"], capture_output=True, check=True)
+        trivy_status = "healthy"
+    except Exception as e:
+        trivy_status = f"unhealthy: {str(e)}"
+    
+    status = {
+        "status": "healthy" if mongo_status == "healthy" and trivy_status == "healthy" else "unhealthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "components": {
+            "mongodb": mongo_status,
+            "trivy": trivy_status,
+            "slack_webhook": "configured" if SLACK_WEBHOOK_URL else "not configured",
+            "nvd_api_key": "configured" if NVD_API_KEY else "not configured"
+        }
+    }
+    
+    return jsonify(status), 200 if status["status"] == "healthy" else 503
 
 @app.route("/scan", methods=["GET", "POST"])
 def scan():
@@ -366,7 +418,12 @@ def scan():
     if not image:
         return jsonify({"error": "Please provide ?image=<docker_image>"}), 400
     
-    return jsonify(run_scan(image, enrich_cve))
+    try:
+        result = run_scan(image, enrich_cve)
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error in scan endpoint: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/stats", methods=["GET"])
 def get_stats():
@@ -393,6 +450,10 @@ def get_stats():
             "total_critical": 0, "total_high": 0, "total_medium": 0, "total_low": 0
         }
         
+        # Remove the _id field from aggregation result
+        if "_id" in vuln_totals:
+            del vuln_totals["_id"]
+        
         return jsonify({
             "total_scans": total_scans,
             "recent_scans_7d": recent_scans,
@@ -400,14 +461,32 @@ def get_stats():
             "cve_cache_size": cve_cache_collection.count_documents({})
         })
     except Exception as e:
+        logger.error(f"Error in get_stats: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/reports", methods=["GET"])
 def list_reports():
-    limit = min(int(request.args.get("limit", 50)), 100)
-    reports = reports_collection.find({}, {"_id": 1, "image": 1, "created_at": 1, "summary": 1, "enriched": 1}).sort("created_at", -1).limit(limit)
-    result = [{"id": str(r["_id"]), "image": r["image"], "created_at": r["created_at"], "summary": r.get("summary", {}), "enriched": r.get("enriched", False)} for r in reports]
-    return jsonify(result)
+    try:
+        limit = min(int(request.args.get("limit", 50)), 100)
+        reports = reports_collection.find(
+            {}, 
+            {"_id": 1, "image": 1, "created_at": 1, "summary": 1, "enriched": 1}
+        ).sort("created_at", -1).limit(limit)
+        
+        result = []
+        for r in reports:
+            result.append({
+                "id": str(r["_id"]), 
+                "image": r["image"], 
+                "created_at": r["created_at"], 
+                "summary": r.get("summary", {}), 
+                "enriched": r.get("enriched", False)
+            })
+        
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error in list_reports: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/report/<report_id>", methods=["GET"])
 def get_report(report_id):
@@ -415,11 +494,40 @@ def get_report(report_id):
         report = reports_collection.find_one({"_id": ObjectId(report_id)})
         if not report:
             return jsonify({"error": "Report not found"}), 404
+        
         report["_id"] = str(report["_id"])
         return jsonify(report)
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error in get_report: {str(e)}")
         return jsonify({"error": "Invalid report ID"}), 400
+
+@app.route("/report/<report_id>", methods=["DELETE"])
+def delete_report(report_id):
+    """Delete a specific report."""
+    try:
+        result = reports_collection.delete_one({"_id": ObjectId(report_id)})
+        if result.deleted_count == 0:
+            return jsonify({"error": "Report not found"}), 404
+        
+        return jsonify({"message": "Report deleted successfully"})
+    except Exception as e:
+        logger.error(f"Error in delete_report: {str(e)}")
+        return jsonify({"error": "Invalid report ID"}), 400
+
+# ---------------- ERROR HANDLERS ----------------
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({"error": "Endpoint not found"}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({"error": "Internal server error"}), 500
 
 # ---------------- MAIN ----------------
 if __name__ == "__main__":
+    logger.info("Starting Enhanced Vulnerability Scanner Backend v2.0")
+    logger.info(f"MongoDB URI configured: {bool(MONGO_URI)}")
+    logger.info(f"Slack webhook configured: {bool(SLACK_WEBHOOK_URL)}")
+    logger.info(f"NVD API key configured: {bool(NVD_API_KEY)}")
+    
     app.run(host="0.0.0.0", port=5000, debug=True)
