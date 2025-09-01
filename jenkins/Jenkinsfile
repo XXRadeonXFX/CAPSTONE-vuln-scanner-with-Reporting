@@ -1,0 +1,307 @@
+pipeline {
+    agent any
+    
+    environment {
+        DOCKER_IMAGE = "${params.IMAGE_NAME ?: 'nginx:latest'}"
+        VULNERABILITY_THRESHOLD = "${params.VULN_THRESHOLD ?: 'HIGH'}"
+        SCANNER_API = "${params.SCANNER_URL ?: 'http://172.30.0.123:5000'}"
+        SLACK_CHANNEL = '#security-alerts'
+        REPORT_RETENTION_DAYS = 30
+    }
+    
+    parameters {
+        string(name: 'IMAGE_NAME', defaultValue: 'nginx:latest', description: 'Docker image to scan')
+        choice(name: 'VULN_THRESHOLD', choices: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'], description: 'Vulnerability threshold for build failure')
+        booleanParam(name: 'ENABLE_CVE_ENRICHMENT', defaultValue: true, description: 'Enable CVE database enrichment')
+        booleanParam(name: 'FAIL_ON_CRITICAL', defaultValue: true, description: 'Fail build if critical vulnerabilities found')
+        booleanParam(name: 'GENERATE_REPORT', defaultValue: true, description: 'Generate detailed vulnerability report')
+    }
+    
+    stages {
+        stage('Preparation') {
+            steps {
+                script {
+                    echo "🔍 Starting vulnerability scan for: ${DOCKER_IMAGE}"
+                    echo "📊 Vulnerability threshold: ${VULNERABILITY_THRESHOLD}"
+                    
+                    // Clean workspace
+                    deleteDir()
+                    
+                    // Validate scanner API connectivity
+                    sh '''
+                        echo "Testing scanner API connectivity..."
+                        curl -f ${SCANNER_API}/health || {
+                            echo "❌ Scanner API is not accessible at ${SCANNER_API}"
+                            exit 1
+                        }
+                        echo "✅ Scanner API is healthy"
+                    '''
+                }
+            }
+        }
+        
+        stage('Image Analysis') {
+            parallel {
+                stage('Vulnerability Scan') {
+                    steps {
+                        script {
+                            def scanParams = [
+                                "image": DOCKER_IMAGE,
+                                "enrich_cve": params.ENABLE_CVE_ENRICHMENT.toString().toLowerCase()
+                            ]
+                            
+                            // Trigger vulnerability scan
+                            def response = sh(
+                                script: """
+                                    curl -X POST "${SCANNER_API}/scan?image=${scanParams.image}&enrich_cve=${scanParams.enrich_cve}" \
+                                    -H "Content-Type: application/json" \
+                                    --max-time 300 \
+                                    --retry 3 \
+                                    --retry-delay 10
+                                """,
+                                returnStdout: true
+                            ).trim()
+                            
+                            def scanResult = readJSON text: response
+                            
+                            if (scanResult.error) {
+                                error("Vulnerability scan failed: ${scanResult.error}")
+                            }
+                            
+                            // Store scan results for later stages
+                            env.REPORT_ID = scanResult.report_id
+                            env.SCAN_SUMMARY = writeJSON returnText: true, json: scanResult.summary
+                            env.SCAN_ELAPSED = scanResult.elapsed.toString()
+                            
+                            echo "✅ Scan completed in ${env.SCAN_ELAPSED}s"
+                            echo "📋 Report ID: ${env.REPORT_ID}"
+                        }
+                    }
+                }
+                
+                stage('Image Metadata') {
+                    steps {
+                        script {
+                            // Extract image metadata
+                            sh '''
+                                echo "Extracting image metadata..."
+                                docker pull "${DOCKER_IMAGE}" || echo "Failed to pull image for metadata"
+                                docker inspect "${DOCKER_IMAGE}" > image_metadata.json || echo "No local image found"
+                            '''
+                            
+                            // Store image info
+                            env.IMAGE_SIZE = sh(
+                                script: "docker images ${DOCKER_IMAGE} --format 'table {{.Size}}' | tail -1 || echo 'Unknown'",
+                                returnStdout: true
+                            ).trim()
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Risk Assessment') {
+            steps {
+                script {
+                    def summary = readJSON text: env.SCAN_SUMMARY
+                    
+                    // Calculate risk metrics
+                    def criticalVulns = summary.CRITICAL ?: 0
+                    def highVulns = summary.HIGH ?: 0
+                    def mediumVulns = summary.MEDIUM ?: 0
+                    def lowVulns = summary.LOW ?: 0
+                    def totalVulns = criticalVulns + highVulns + mediumVulns + lowVulns
+                    
+                    def riskScore = (criticalVulns * 4) + (highVulns * 3) + (mediumVulns * 2) + (lowVulns * 1)
+                    
+                    // Determine risk level
+                    def riskLevel = "LOW"
+                    if (riskScore > 100) riskLevel = "CRITICAL"
+                    else if (riskScore > 50) riskLevel = "HIGH"  
+                    else if (riskScore > 20) riskLevel = "MEDIUM"
+                    
+                    env.RISK_LEVEL = riskLevel
+                    env.RISK_SCORE = riskScore.toString()
+                    env.TOTAL_VULNERABILITIES = totalVulns.toString()
+                    
+                    echo """
+                    📊 Risk Assessment Results:
+                    ═══════════════════════════
+                    🔴 Critical: ${criticalVulns}
+                    🟠 High: ${highVulns}  
+                    🟡 Medium: ${mediumVulns}
+                    🟢 Low: ${lowVulns}
+                    ═══════════════════════════
+                    📈 Risk Score: ${riskScore}
+                    🎯 Risk Level: ${riskLevel}
+                    📦 Total Issues: ${totalVulns}
+                    """
+                    
+                    // Check if build should fail based on thresholds
+                    def shouldFail = false
+                    def failureReason = ""
+                    
+                    switch(params.VULN_THRESHOLD) {
+                        case 'CRITICAL':
+                            if (criticalVulns > 0) {
+                                shouldFail = true
+                                failureReason = "${criticalVulns} critical vulnerabilities found"
+                            }
+                            break
+                        case 'HIGH':
+                            if (criticalVulns > 0 || highVulns > 0) {
+                                shouldFail = true
+                                failureReason = "${criticalVulns + highVulns} high/critical vulnerabilities found"
+                            }
+                            break
+                        case 'MEDIUM':
+                            if (criticalVulns > 0 || highVulns > 0 || mediumVulns > 0) {
+                                shouldFail = true
+                                failureReason = "${criticalVulns + highVulns + mediumVulns} medium+ vulnerabilities found"
+                            }
+                            break
+                    }
+                    
+                    if (shouldFail) {
+                        env.BUILD_SHOULD_FAIL = "true"
+                        env.FAILURE_REASON = failureReason
+                        currentBuild.result = 'UNSTABLE'
+                        echo "⚠️  Build marked as UNSTABLE: ${failureReason}"
+                    } else {
+                        echo "✅ Vulnerability threshold check passed"
+                    }
+                }
+            }
+        }
+        
+        stage('Generate Reports') {
+            when {
+                expression { params.GENERATE_REPORT == true }
+            }
+            steps {
+                script {
+                    // Retrieve full scan report
+                    def reportResponse = sh(
+                        script: "curl -X GET '${SCANNER_API}/report/${env.REPORT_ID}'",
+                        returnStdout: true
+                    )
+                    
+                    def fullReport = readJSON text: reportResponse
+                    
+                    // Generate Jenkins-friendly report
+                    writeFile file: 'vulnerability-report.json', text: reportResponse
+                    
+                    // Create summary report
+                    def summaryReport = """
+# Vulnerability Scan Report
+
+## Scan Details
+- **Image**: ${DOCKER_IMAGE}
+- **Scan Date**: ${new Date().format('yyyy-MM-dd HH:mm:ss')}
+- **Duration**: ${env.SCAN_ELAPSED}s
+- **Report ID**: ${env.REPORT_ID}
+
+## Risk Assessment
+- **Risk Level**: ${env.RISK_LEVEL}
+- **Risk Score**: ${env.RISK_SCORE}
+- **Total Vulnerabilities**: ${env.TOTAL_VULNERABILITIES}
+
+## Vulnerability Breakdown
+- 🔴 **Critical**: ${readJSON(text: env.SCAN_SUMMARY).CRITICAL ?: 0}
+- 🟠 **High**: ${readJSON(text: env.SCAN_SUMMARY).HIGH ?: 0}
+- 🟡 **Medium**: ${readJSON(text: env.SCAN_SUMMARY).MEDIUM ?: 0}
+- 🟢 **Low**: ${readJSON(text: env.SCAN_SUMMARY).LOW ?: 0}
+
+## Next Steps
+${env.BUILD_SHOULD_FAIL == "true" ? "⚠️ **Action Required**: " + env.FAILURE_REASON : "✅ **No Action Required**: Vulnerabilities within acceptable threshold"}
+
+---
+*Generated by Jenkins Pipeline*
+                    """
+                    
+                    writeFile file: 'VULNERABILITY_SUMMARY.md', text: summaryReport
+                    
+                    // Archive reports
+                    archiveArtifacts artifacts: 'vulnerability-report.json,VULNERABILITY_SUMMARY.md', 
+                                   fingerprint: true,
+                                   allowEmptyArchive: false
+                }
+            }
+        }
+        
+        stage('Quality Gates') {
+            steps {
+                script {
+                    def summary = readJSON text: env.SCAN_SUMMARY
+                    
+                    // Publish test results in JUnit format for trend analysis
+                    def junitXml = """<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="VulnerabilityScans" tests="4" failures="${summary.CRITICAL + summary.HIGH}" time="${env.SCAN_ELAPSED}">
+    <testcase classname="VulnerabilityCheck" name="CriticalVulnerabilities" time="0">
+        ${summary.CRITICAL > 0 ? '<failure message="Critical vulnerabilities found">Found ' + summary.CRITICAL + ' critical vulnerabilities</failure>' : ''}
+    </testcase>
+    <testcase classname="VulnerabilityCheck" name="HighVulnerabilities" time="0">
+        ${summary.HIGH > 0 ? '<failure message="High vulnerabilities found">Found ' + summary.HIGH + ' high vulnerabilities</failure>' : ''}
+    </testcase>
+    <testcase classname="VulnerabilityCheck" name="MediumVulnerabilities" time="0"/>
+    <testcase classname="VulnerabilityCheck" name="LowVulnerabilities" time="0"/>
+</testsuite>"""
+                    
+                    writeFile file: 'vulnerability-results.xml', text: junitXml
+                    publishTestResults testResultsPattern: 'vulnerability-results.xml'
+                    
+                    // Set build description
+                    currentBuild.description = "Risk: ${env.RISK_LEVEL} | Vulns: ${env.TOTAL_VULNERABILITIES} | Score: ${env.RISK_SCORE}"
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            script {
+                def summary = readJSON text: env.SCAN_SUMMARY
+                def buildStatus = currentBuild.result ?: 'SUCCESS'
+                def statusIcon = buildStatus == 'SUCCESS' ? '✅' : buildStatus == 'UNSTABLE' ? '⚠️' : '❌'
+                
+                // Send Slack notification
+                slackSend(
+                    channel: env.SLACK_CHANNEL,
+                    color: buildStatus == 'SUCCESS' ? 'good' : buildStatus == 'UNSTABLE' ? 'warning' : 'danger',
+                    message: """
+${statusIcon} *Vulnerability Scan Completed*
+
+*Image:* `${DOCKER_IMAGE}`
+*Build:* #${env.BUILD_NUMBER} | *Status:* ${buildStatus}
+*Risk Level:* ${env.RISK_LEVEL} | *Score:* ${env.RISK_SCORE}
+
+*Vulnerabilities:*
+🔴 Critical: ${summary.CRITICAL ?: 0} | 🟠 High: ${summary.HIGH ?: 0}
+🟡 Medium: ${summary.MEDIUM ?: 0} | 🟢 Low: ${summary.LOW ?: 0}
+
+*Duration:* ${env.SCAN_ELAPSED}s | *Report:* ${env.REPORT_ID}
+<${env.BUILD_URL}|View Build> | <${env.SCANNER_API}/report/${env.REPORT_ID}|Full Report>
+                    """
+                )
+            }
+        }
+        
+        unstable {
+            script {
+                echo "🟡 Build completed with warnings: ${env.FAILURE_REASON}"
+                
+                if (params.FAIL_ON_CRITICAL && env.BUILD_SHOULD_FAIL == "true") {
+                    error("Build failed due to vulnerability threshold breach: ${env.FAILURE_REASON}")
+                }
+            }
+        }
+        
+        cleanup {
+            // Clean up temporary files and images
+            sh '''
+                docker rmi "${DOCKER_IMAGE}" 2>/dev/null || true
+                rm -f image_metadata.json vulnerability-*.xml
+            '''
+        }
+    }
+}
