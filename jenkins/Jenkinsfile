@@ -5,6 +5,8 @@ pipeline {
         DOCKER_IMAGE = "${params.IMAGE_NAME ?: 'nginx:latest'}"
         VULNERABILITY_THRESHOLD = "${params.VULN_THRESHOLD ?: 'HIGH'}"
         SCANNER_API = "${params.SCANNER_URL ?: 'http://172.30.0.123:5000'}"
+        // Add timeout for long-running scans
+        SCAN_TIMEOUT = 600
         SLACK_CHANNEL = '#security-alerts'
         REPORT_RETENTION_DAYS = 30
     }
