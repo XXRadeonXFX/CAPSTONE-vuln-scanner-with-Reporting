@@ -6,13 +6,12 @@ Monitors Docker registries for new pushes and automatically triggers vulnerabili
 import os
 import json
 import time
-import asyncio
 import threading
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set
 import requests
 import schedule
-from flask import Flask, request, jsonify
+from flask import request, jsonify
 
 # Configuration - Load these early
 MONITOR_INTERVAL = int(os.getenv("MONITOR_INTERVAL_MINUTES", "5"))  # Check every 5 minutes
@@ -44,127 +43,14 @@ class RegistryMonitor:
         global registry_state_collection, auto_scan_queue_collection
         
         if db is not None and not self.initialized:
-            registry_state_collection = db["registry_state"]
-            auto_scan_queue_collection = db["auto_scan_queue"]
-            self.load_known_state()
-            self.initialized = True
-            if logger:
-                logger.info("Registry monitor initialized")
-    
-    def is_ready(self):
-        """Check if all required components are available."""
-        return all([
-            registry_client is not None,
-            run_scan is not None,
-            reports_collection is not None,
-            db is not None,
-            logger is not None,
-            self.initialized
-        ])
-    
-    def load_known_state(self):
-        """Load previously known registry state from database."""
-        if not registry_state_collection:
-            return
-            
-        try:
-            state = registry_state_collection.find_one({"_id": "registry_monitor_state"})
-            if state:
-                self.last_check = state.get("last_check", self.last_check)
-                self.known_images = set(state.get("known_images", []))
+            try:
+                registry_state_collection = db["registry_state"]
+                auto_scan_queue_collection = db["auto_scan_queue"]
+                self.load_known_state()
+                self.initialized = True
                 if logger:
-                    logger.info(f"Loaded registry state: {len(self.known_images)} known images")
-            else:
-                if logger:
-                    logger.info("No previous registry state found, starting fresh")
-        except Exception as e:
-            if logger:
-                logger.error(f"Error loading registry state: {str(e)}")
-    
-    def save_state(self):
-        """Save current registry state to database."""
-        if not registry_state_collection:
-            return
-            
-        try:
-            registry_state_collection.replace_one(
-                {"_id": "registry_monitor_state"},
-                {
-                    "_id": "registry_monitor_state",
-                    "last_check": self.last_check,
-                    "known_images": list(self.known_images),
-                    "updated_at": datetime.utcnow()
-                },
-                upsert=True
-            )
-        except Exception as e:
-            if logger:
-                logger.error(f"Error saving registry state: {str(e)}")
-    
-    def get_user_repositories(self, username: str = "xxradeonfx") -> List[Dict]:
-        """Get all repositories for a specific user."""
-        try:
-            # Use Docker Hub API to get user repositories
-            url = f"https://hub.docker.com/v2/repositories/{username}/"
-            params = {"page_size": 100}  # Get up to 100 repositories
-            
-            response = requests.get(url, params=params, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                repositories = []
-                
-                for repo in data.get("results", []):
-                    repositories.append({
-                        "name": repo["name"],
-                        "full_name": repo["name"],  # For user repos, name is the same
-                        "description": repo.get("description", ""),
-                        "star_count": repo.get("star_count", 0),
-                        "pull_count": repo.get("pull_count", 0),
-                        "last_updated": repo.get("last_updated"),
-                        "is_private": repo.get("is_private", False)
-                    })
-                
-                if logger:
-                    logger.info(f"Found {len(repositories)} repositories for user {username}")
-                return repositories
-            else:
-                if logger:
-                    logger.error(f"Failed to fetch repositories for {username}: {response.status_code}")
-                return []
-        except Exception as e:
-            if logger:
-                logger.error(f"Error fetching user repositories: {str(e)}")
-            return []
-    
-    def get_repository_tags_with_metadata(self, repository: str, limit: int = 10) -> List[Dict]:
-        """Get repository tags with detailed metadata including push timestamps."""
-        try:
-            url = f"https://hub.docker.com/v2/repositories/{repository}/tags"
-            params = {"page_size": limit, "ordering": "-last_updated"}
-            
-            response = requests.get(url, params=params, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                tags = []
-                
-                for tag in data.get("results", []):
-                    tags.append({
-                        "name": tag["name"],
-                        "full_name": f"{repository}:{tag['name']}",
-                        "last_updated": tag.get("last_updated"),
-                        "full_size": tag.get("full_size"),
-                        "repository": repository,
-                        "digest": tag.get("digest"),
-                        "tag_last_pushed": tag.get("tag_last_pushed"),
-                        "images": tag.get("images", [])
-                    })
-                
-                return tags
-            else:
-                if logger:
-                    logger.warning(f"Failed to fetch tags for {repository}: {response.status_code}")
-                return []
-        except Exception as e:
+                    logger.info("Registry monitor initialized successfully")
+            except Exception as e:
             if logger:
                 logger.error(f"Error fetching tags for {repository}: {str(e)}")
             return []
@@ -485,7 +371,7 @@ monitoring_thread = threading.Thread(target=monitoring_scheduler, daemon=True)
 monitoring_thread.start()
 
 # Flask routes for monitoring management
-def create_monitoring_app(main_app: Flask):
+def create_monitoring_app(main_app):
     """Add monitoring routes to the main Flask app."""
     
     @main_app.route("/monitor/status", methods=["GET"])
@@ -592,3 +478,120 @@ print("Registry monitoring system initialized")
 print(f"Auto-scan enabled: {AUTO_SCAN_ENABLED}")
 print(f"Check interval: {MONITOR_INTERVAL} minutes")
 print(f"Monitored repositories: {MONITORED_REPOSITORIES if MONITORED_REPOSITORIES and MONITORED_REPOSITORIES[0] else 'all xxradeonfx repositories'}")
+                if logger:
+                    logger.error(f"Error initializing registry monitor: {str(e)}")
+    
+    def is_ready(self):
+        """Check if all required components are available."""
+        return all([
+            registry_client is not None,
+            run_scan is not None,
+            reports_collection is not None,
+            db is not None,
+            logger is not None,
+            self.initialized
+        ])
+    
+    def load_known_state(self):
+        """Load previously known registry state from database."""
+        if not registry_state_collection:
+            return
+            
+        try:
+            state = registry_state_collection.find_one({"_id": "registry_monitor_state"})
+            if state:
+                self.last_check = state.get("last_check", self.last_check)
+                self.known_images = set(state.get("known_images", []))
+                if logger:
+                    logger.info(f"Loaded registry state: {len(self.known_images)} known images")
+            else:
+                if logger:
+                    logger.info("No previous registry state found, starting fresh")
+        except Exception as e:
+            if logger:
+                logger.error(f"Error loading registry state: {str(e)}")
+    
+    def save_state(self):
+        """Save current registry state to database."""
+        if not registry_state_collection:
+            return
+            
+        try:
+            registry_state_collection.replace_one(
+                {"_id": "registry_monitor_state"},
+                {
+                    "_id": "registry_monitor_state",
+                    "last_check": self.last_check,
+                    "known_images": list(self.known_images),
+                    "updated_at": datetime.utcnow()
+                },
+                upsert=True
+            )
+        except Exception as e:
+            if logger:
+                logger.error(f"Error saving registry state: {str(e)}")
+    
+    def get_user_repositories(self, username: str = "xxradeonfx") -> List[Dict]:
+        """Get all repositories for a specific user."""
+        try:
+            # Use Docker Hub API to get user repositories
+            url = f"https://hub.docker.com/v2/repositories/{username}/"
+            params = {"page_size": 100}  # Get up to 100 repositories
+            
+            response = requests.get(url, params=params, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                repositories = []
+                
+                for repo in data.get("results", []):
+                    repositories.append({
+                        "name": repo["name"],
+                        "full_name": repo["name"],  # For user repos, name is the same
+                        "description": repo.get("description", ""),
+                        "star_count": repo.get("star_count", 0),
+                        "pull_count": repo.get("pull_count", 0),
+                        "last_updated": repo.get("last_updated"),
+                        "is_private": repo.get("is_private", False)
+                    })
+                
+                if logger:
+                    logger.info(f"Found {len(repositories)} repositories for user {username}")
+                return repositories
+            else:
+                if logger:
+                    logger.error(f"Failed to fetch repositories for {username}: {response.status_code}")
+                return []
+        except Exception as e:
+            if logger:
+                logger.error(f"Error fetching user repositories: {str(e)}")
+            return []
+    
+    def get_repository_tags_with_metadata(self, repository: str, limit: int = 10) -> List[Dict]:
+        """Get repository tags with detailed metadata including push timestamps."""
+        try:
+            url = f"https://hub.docker.com/v2/repositories/{repository}/tags"
+            params = {"page_size": limit, "ordering": "-last_updated"}
+            
+            response = requests.get(url, params=params, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                tags = []
+                
+                for tag in data.get("results", []):
+                    tags.append({
+                        "name": tag["name"],
+                        "full_name": f"{repository}:{tag['name']}",
+                        "last_updated": tag.get("last_updated"),
+                        "full_size": tag.get("full_size"),
+                        "repository": repository,
+                        "digest": tag.get("digest"),
+                        "tag_last_pushed": tag.get("tag_last_pushed"),
+                        "images": tag.get("images", [])
+                    })
+                
+                return tags
+            else:
+                if logger:
+                    logger.warning(f"Failed to fetch tags for {repository}: {response.status_code}")
+                return []
+        except Exception as e:
