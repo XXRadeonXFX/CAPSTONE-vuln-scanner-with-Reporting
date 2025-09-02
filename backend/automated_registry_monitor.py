@@ -14,21 +14,21 @@ import requests
 import schedule
 from flask import Flask, request, jsonify
 
-# Import existing components
-from enhanced_backend_registry import (
-    registry_client, run_scan, send_slack_notification, 
-    reports_collection, db, logger
-)
-
-# Configuration
+# Configuration - Load these early
 MONITOR_INTERVAL = int(os.getenv("MONITOR_INTERVAL_MINUTES", "5"))  # Check every 5 minutes
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "your-webhook-secret")
 AUTO_SCAN_ENABLED = os.getenv("AUTO_SCAN_ENABLED", "true").lower() == "true"
 MONITORED_REPOSITORIES = os.getenv("MONITORED_REPOSITORIES", "").split(",") if os.getenv("MONITORED_REPOSITORIES") else []
 
-# Collections for tracking
-registry_state_collection = db["registry_state"]
-auto_scan_queue_collection = db["auto_scan_queue"]
+# Global variables - will be injected by main app
+registry_client = None
+run_scan = None
+send_slack_notification = None
+reports_collection = None
+db = None
+logger = None
+registry_state_collection = None
+auto_scan_queue_collection = None
 
 class RegistryMonitor:
     """Monitors Docker registry for new image pushes and triggers scans."""
@@ -37,23 +37,55 @@ class RegistryMonitor:
         self.last_check = datetime.utcnow() - timedelta(hours=1)
         self.known_images: Set[str] = set()
         self.scan_queue: List[Dict] = []
-        self.load_known_state()
+        self.initialized = False
+    
+    def initialize(self):
+        """Initialize the monitor after components are available."""
+        global registry_state_collection, auto_scan_queue_collection
+        
+        if db is not None and not self.initialized:
+            registry_state_collection = db["registry_state"]
+            auto_scan_queue_collection = db["auto_scan_queue"]
+            self.load_known_state()
+            self.initialized = True
+            if logger:
+                logger.info("Registry monitor initialized")
+    
+    def is_ready(self):
+        """Check if all required components are available."""
+        return all([
+            registry_client is not None,
+            run_scan is not None,
+            reports_collection is not None,
+            db is not None,
+            logger is not None,
+            self.initialized
+        ])
     
     def load_known_state(self):
         """Load previously known registry state from database."""
+        if not registry_state_collection:
+            return
+            
         try:
             state = registry_state_collection.find_one({"_id": "registry_monitor_state"})
             if state:
                 self.last_check = state.get("last_check", self.last_check)
                 self.known_images = set(state.get("known_images", []))
-                logger.info(f"Loaded registry state: {len(self.known_images)} known images")
+                if logger:
+                    logger.info(f"Loaded registry state: {len(self.known_images)} known images")
             else:
-                logger.info("No previous registry state found, starting fresh")
+                if logger:
+                    logger.info("No previous registry state found, starting fresh")
         except Exception as e:
-            logger.error(f"Error loading registry state: {str(e)}")
+            if logger:
+                logger.error(f"Error loading registry state: {str(e)}")
     
     def save_state(self):
         """Save current registry state to database."""
+        if not registry_state_collection:
+            return
+            
         try:
             registry_state_collection.replace_one(
                 {"_id": "registry_monitor_state"},
@@ -66,7 +98,8 @@ class RegistryMonitor:
                 upsert=True
             )
         except Exception as e:
-            logger.error(f"Error saving registry state: {str(e)}")
+            if logger:
+                logger.error(f"Error saving registry state: {str(e)}")
     
     def get_user_repositories(self, username: str = "xxradeonfx") -> List[Dict]:
         """Get all repositories for a specific user."""
@@ -91,13 +124,16 @@ class RegistryMonitor:
                         "is_private": repo.get("is_private", False)
                     })
                 
-                logger.info(f"Found {len(repositories)} repositories for user {username}")
+                if logger:
+                    logger.info(f"Found {len(repositories)} repositories for user {username}")
                 return repositories
             else:
-                logger.error(f"Failed to fetch repositories for {username}: {response.status_code}")
+                if logger:
+                    logger.error(f"Failed to fetch repositories for {username}: {response.status_code}")
                 return []
         except Exception as e:
-            logger.error(f"Error fetching user repositories: {str(e)}")
+            if logger:
+                logger.error(f"Error fetching user repositories: {str(e)}")
             return []
     
     def get_repository_tags_with_metadata(self, repository: str, limit: int = 10) -> List[Dict]:
@@ -125,14 +161,21 @@ class RegistryMonitor:
                 
                 return tags
             else:
-                logger.warning(f"Failed to fetch tags for {repository}: {response.status_code}")
+                if logger:
+                    logger.warning(f"Failed to fetch tags for {repository}: {response.status_code}")
                 return []
         except Exception as e:
-            logger.error(f"Error fetching tags for {repository}: {str(e)}")
+            if logger:
+                logger.error(f"Error fetching tags for {repository}: {str(e)}")
             return []
     
     def check_for_new_images(self) -> List[Dict]:
         """Check for newly pushed images since last check."""
+        if not self.is_ready():
+            if logger:
+                logger.warning("Registry monitor not ready, skipping image check")
+            return []
+            
         new_images = []
         current_check = datetime.utcnow()
         
@@ -144,7 +187,8 @@ class RegistryMonitor:
             if MONITORED_REPOSITORIES and MONITORED_REPOSITORIES[0]:  # Check if not empty string
                 repo_names = [repo.get("name", repo.get("full_name", "")) for repo in repositories]
                 repositories = [repo for repo in repositories if repo["name"] in MONITORED_REPOSITORIES]
-                logger.info(f"Filtering to monitored repositories: {[r['name'] for r in repositories]}")
+                if logger:
+                    logger.info(f"Filtering to monitored repositories: {[r['name'] for r in repositories]}")
             
             for repo in repositories:
                 repo_name = f"xxradeonfx/{repo['name']}"
@@ -178,10 +222,12 @@ class RegistryMonitor:
                                 # Add to known images
                                 self.known_images.add(image_name)
                                 
-                                logger.info(f"New image detected: {image_name} (updated: {last_updated})")
+                                if logger:
+                                    logger.info(f"New image detected: {image_name} (updated: {last_updated})")
                         
                         except Exception as e:
-                            logger.error(f"Error parsing timestamp for {image_name}: {str(e)}")
+                            if logger:
+                                logger.error(f"Error parsing timestamp for {image_name}: {str(e)}")
             
             # Update last check time
             self.last_check = current_check
@@ -190,11 +236,15 @@ class RegistryMonitor:
             return new_images
             
         except Exception as e:
-            logger.error(f"Error checking for new images: {str(e)}")
+            if logger:
+                logger.error(f"Error checking for new images: {str(e)}")
             return []
     
     def queue_scan(self, image_info: Dict):
         """Add image to scan queue."""
+        if not auto_scan_queue_collection:
+            return None
+            
         try:
             scan_doc = {
                 **image_info,
@@ -205,15 +255,20 @@ class RegistryMonitor:
             }
             
             result = auto_scan_queue_collection.insert_one(scan_doc)
-            logger.info(f"Queued scan for {image_info['image']}: {result.inserted_id}")
+            if logger:
+                logger.info(f"Queued scan for {image_info['image']}: {result.inserted_id}")
             return str(result.inserted_id)
             
         except Exception as e:
-            logger.error(f"Error queuing scan: {str(e)}")
+            if logger:
+                logger.error(f"Error queuing scan: {str(e)}")
             return None
     
     def process_scan_queue(self):
         """Process pending scans in the queue."""
+        if not self.is_ready() or not auto_scan_queue_collection:
+            return
+            
         try:
             # Get queued scans
             queued_scans = auto_scan_queue_collection.find({"status": "queued"}).limit(5)
@@ -228,7 +283,8 @@ class RegistryMonitor:
                     
                     # Execute scan
                     image_name = scan_doc["image"]
-                    logger.info(f"Auto-scanning image: {image_name}")
+                    if logger:
+                        logger.info(f"Auto-scanning image: {image_name}")
                     
                     scan_result = run_scan(image_name, enrich_cve=True)
                     
@@ -244,7 +300,8 @@ class RegistryMonitor:
                                 }
                             }
                         )
-                        logger.error(f"Auto-scan failed for {image_name}: {scan_result['error']}")
+                        if logger:
+                            logger.error(f"Auto-scan failed for {image_name}: {scan_result['error']}")
                     else:
                         # Mark as completed
                         auto_scan_queue_collection.update_one(
@@ -260,7 +317,8 @@ class RegistryMonitor:
                         
                         # Send enhanced notification for auto-discovered images
                         self.send_auto_scan_notification(scan_doc, scan_result)
-                        logger.info(f"Auto-scan completed for {image_name}: {scan_result['report_id']}")
+                        if logger:
+                            logger.info(f"Auto-scan completed for {image_name}: {scan_result['report_id']}")
                 
                 except Exception as e:
                     # Mark as failed
@@ -274,10 +332,12 @@ class RegistryMonitor:
                             }
                         }
                     )
-                    logger.error(f"Error processing scan for {scan_doc['image']}: {str(e)}")
+                    if logger:
+                        logger.error(f"Error processing scan for {scan_doc['image']}: {str(e)}")
         
         except Exception as e:
-            logger.error(f"Error processing scan queue: {str(e)}")
+            if logger:
+                logger.error(f"Error processing scan queue: {str(e)}")
     
     def send_auto_scan_notification(self, scan_doc: Dict, scan_result: Dict):
         """Send enhanced Slack notification for automatically detected scans."""
@@ -349,41 +409,62 @@ class RegistryMonitor:
                 timeout=10
             )
             if response.status_code == 200:
-                logger.info(f"Auto-scan notification sent for {image_name}")
+                if logger:
+                    logger.info(f"Auto-scan notification sent for {image_name}")
         except Exception as e:
-            logger.error(f"Failed to send auto-scan notification: {str(e)}")
+            if logger:
+                logger.error(f"Failed to send auto-scan notification: {str(e)}")
     
     def run_monitoring_cycle(self):
         """Run one complete monitoring cycle."""
         if not AUTO_SCAN_ENABLED:
-            logger.debug("Auto-scan is disabled")
+            if logger:
+                logger.debug("Auto-scan is disabled")
             return
         
-        logger.info("Starting registry monitoring cycle...")
+        if not self.is_ready():
+            if logger:
+                logger.warning("Monitoring system not ready, skipping cycle")
+            return
         
-        # Check for new images
-        new_images = self.check_for_new_images()
+        if logger:
+            logger.info("Starting registry monitoring cycle...")
         
-        if new_images:
-            logger.info(f"Found {len(new_images)} new images")
+        try:
+            # Check for new images
+            new_images = self.check_for_new_images()
             
-            # Queue scans for new images
-            for image_info in new_images:
-                queue_id = self.queue_scan(image_info)
-                if queue_id:
-                    logger.info(f"Queued scan for {image_info['image']}: {queue_id}")
-        
-        # Process scan queue
-        self.process_scan_queue()
-        
-        logger.info("Registry monitoring cycle completed")
+            if new_images:
+                if logger:
+                    logger.info(f"Found {len(new_images)} new images")
+                
+                # Queue scans for new images
+                for image_info in new_images:
+                    queue_id = self.queue_scan(image_info)
+                    if queue_id:
+                        if logger:
+                            logger.info(f"Queued scan for {image_info['image']}: {queue_id}")
+            
+            # Process scan queue
+            self.process_scan_queue()
+            
+            if logger:
+                logger.info("Registry monitoring cycle completed")
+                
+        except Exception as e:
+            if logger:
+                logger.error(f"Error in monitoring cycle: {e}")
 
 # Initialize monitor
 registry_monitor = RegistryMonitor()
 
 def run_scheduled_monitoring():
     """Run monitoring on schedule."""
-    registry_monitor.run_monitoring_cycle()
+    try:
+        registry_monitor.run_monitoring_cycle()
+    except Exception as e:
+        if logger:
+            logger.error(f"Scheduled monitoring failed: {e}")
 
 # Schedule monitoring
 schedule.every(MONITOR_INTERVAL).minutes.do(run_scheduled_monitoring)
@@ -391,8 +472,13 @@ schedule.every(MONITOR_INTERVAL).minutes.do(run_scheduled_monitoring)
 def monitoring_scheduler():
     """Background thread for running scheduled tasks."""
     while True:
-        schedule.run_pending()
-        time.sleep(30)  # Check every 30 seconds
+        try:
+            schedule.run_pending()
+            time.sleep(30)  # Check every 30 seconds
+        except Exception as e:
+            if logger:
+                logger.error(f"Monitoring scheduler error: {e}")
+            time.sleep(60)  # Wait a minute before retrying
 
 # Start monitoring thread
 monitoring_thread = threading.Thread(target=monitoring_scheduler, daemon=True)
@@ -406,6 +492,13 @@ def create_monitoring_app(main_app: Flask):
     def monitor_status():
         """Get monitoring status and statistics."""
         try:
+            if not auto_scan_queue_collection:
+                return jsonify({
+                    "monitoring_enabled": AUTO_SCAN_ENABLED,
+                    "status": "not_initialized",
+                    "error": "Database not connected"
+                }), 200
+                
             # Get queue statistics
             total_queued = auto_scan_queue_collection.count_documents({"status": "queued"})
             total_processing = auto_scan_queue_collection.count_documents({"status": "processing"})
@@ -426,14 +519,15 @@ def create_monitoring_app(main_app: Flask):
                 "check_interval_minutes": MONITOR_INTERVAL,
                 "last_check": registry_monitor.last_check.isoformat(),
                 "known_images_count": len(registry_monitor.known_images),
-                "monitored_repositories": MONITORED_REPOSITORIES if MONITORED_REPOSITORIES[0] else ["all xxradeonfx repositories"],
+                "monitored_repositories": MONITORED_REPOSITORIES if MONITORED_REPOSITORIES and MONITORED_REPOSITORIES[0] else ["all xxradeonfx repositories"],
                 "queue_stats": {
                     "queued": total_queued,
                     "processing": total_processing,
                     "completed": total_completed,
                     "failed": total_failed
                 },
-                "recent_scans": recent_scans
+                "recent_scans": recent_scans,
+                "system_ready": registry_monitor.is_ready()
             })
         
         except Exception as e:
@@ -478,7 +572,8 @@ def create_monitoring_app(main_app: Flask):
                 }
                 
                 queue_id = registry_monitor.queue_scan(image_info)
-                logger.info(f"Webhook triggered scan for {image_name}: {queue_id}")
+                if logger:
+                    logger.info(f"Webhook triggered scan for {image_name}: {queue_id}")
                 
                 return jsonify({
                     "message": f"Scan queued for {image_name}",
@@ -488,10 +583,12 @@ def create_monitoring_app(main_app: Flask):
                 return jsonify({"error": "Invalid webhook payload"}), 400
         
         except Exception as e:
-            logger.error(f"Webhook error: {str(e)}")
+            if logger:
+                logger.error(f"Webhook error: {str(e)}")
             return jsonify({"error": str(e)}), 500
 
-logger.info("Registry monitoring system initialized")
-logger.info(f"Auto-scan enabled: {AUTO_SCAN_ENABLED}")
-logger.info(f"Check interval: {MONITOR_INTERVAL} minutes")
-logger.info(f"Monitored repositories: {MONITORED_REPOSITORIES if MONITORED_REPOSITORIES[0] else 'all xxradeonfx repositories'}")
+# Log initialization status
+print("Registry monitoring system initialized")
+print(f"Auto-scan enabled: {AUTO_SCAN_ENABLED}")
+print(f"Check interval: {MONITOR_INTERVAL} minutes")
+print(f"Monitored repositories: {MONITORED_REPOSITORIES if MONITORED_REPOSITORIES and MONITORED_REPOSITORIES[0] else 'all xxradeonfx repositories'}")
