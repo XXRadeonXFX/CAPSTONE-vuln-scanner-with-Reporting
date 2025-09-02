@@ -41,23 +41,46 @@ def post_backend_data(endpoint, params=None, data=None):
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
-        image = request.form.get("image")
-        enrich_cve = request.form.get("enrich_cve") == "on"
+        scan_type = request.form.get("scan_type", "single")
         
-        if image:
-            # Start the scan
-            scan_result = post_backend_data("scan", params={"image": image, "enrich_cve": str(enrich_cve).lower()})
+        if scan_type == "single":
+            image = request.form.get("image")
+            enrich_cve = request.form.get("enrich_cve") == "on"
             
-            if "error" in scan_result:
-                flash(f"Scan failed: {scan_result['error']}", "error")
+            if image:
+                scan_result = post_backend_data("scan", params={"image": image, "enrich_cve": str(enrich_cve).lower()})
+                
+                if "error" in scan_result:
+                    flash(f"Scan failed: {scan_result['error']}", "error")
+                else:
+                    flash(f"Scan completed for {image}! Report ID: {scan_result.get('report_id', 'N/A')}", "success")
+        
+        elif scan_type == "registry":
+            repositories = request.form.getlist("repositories")
+            max_images = int(request.form.get("max_images", 20))
+            
+            if repositories:
+                registry_data = {
+                    "repositories": repositories,
+                    "max_images": max_images
+                }
+                scan_result = post_backend_data("registry/scan", data=registry_data)
+                
+                if "error" in scan_result:
+                    flash(f"Registry scan failed: {scan_result['error']}", "error")
+                else:
+                    flash(f"Registry scan completed! Scanned {scan_result.get('total_scanned', 0)} images from {len(repositories)} repositories.", "success")
             else:
-                flash(f"Scan completed for {image}! Report ID: {scan_result.get('report_id', 'N/A')}", "success")
-            
-            return redirect(url_for("index"))
+                flash("Please select at least one repository to scan", "warning")
+        
+        return redirect(url_for("index"))
 
     # Fetch dashboard data
     stats = get_backend_data("stats", {"total_scans": 0, "recent_scans_7d": 0, "vulnerability_totals": {}})
     reports = get_backend_data("reports", [])
+    
+    # Fetch registry repositories for the registry scan form
+    registry_data = get_backend_data("registry/repositories", {"repositories": []})
     
     # Process reports for dashboard
     recent_reports = reports[:5] if reports else []
@@ -65,7 +88,56 @@ def index():
     return render_template("dashboard.html", 
                          stats=stats, 
                          reports=recent_reports,
-                         all_reports_count=len(reports))
+                         all_reports_count=len(reports),
+                         registry_repositories=registry_data.get("repositories", []))
+
+@app.route("/registry")
+def registry_dashboard():
+    """Registry management dashboard."""
+    registry_data = get_backend_data("registry/repositories", {"repositories": []})
+    stats = get_backend_data("stats", {})
+    
+    return render_template("registry_dashboard.html",
+                         registry_data=registry_data,
+                         stats=stats)
+
+@app.route("/registry/repositories/<path:repository>/tags")
+def repository_tags(repository):
+    """View tags for a specific repository."""
+    limit = request.args.get("limit", 50)
+    tags_data = get_backend_data(f"registry/repositories/{repository}/tags?limit={limit}")
+    
+    return render_template("repository_tags.html",
+                         repository=repository,
+                         tags_data=tags_data)
+
+@app.route("/registry/scan", methods=["POST"])
+def registry_scan():
+    """Handle AJAX registry scan requests."""
+    data = request.get_json()
+    repositories = data.get("repositories", [])
+    max_images = int(data.get("max_images", 20))
+    
+    if not repositories:
+        return jsonify({"error": "No repositories selected"}), 400
+    
+    registry_data = {
+        "repositories": repositories,
+        "max_images": max_images
+    }
+    scan_result = post_backend_data("registry/scan", data=registry_data)
+    return jsonify(scan_result)
+
+@app.route("/registry/scan/<scan_id>")
+def registry_scan_results(scan_id):
+    """View registry scan results."""
+    scan_data = get_backend_data(f"registry/scan/{scan_id}")
+    
+    if "error" in scan_data:
+        flash(f"Registry scan not found: {scan_data['error']}", "error")
+        return redirect(url_for("registry_dashboard"))
+    
+    return render_template("registry_scan_results.html", scan_data=scan_data)
 
 @app.route("/scan", methods=["POST"])
 def scan():
@@ -85,10 +157,13 @@ def reports_list():
     """Display all reports with filtering and pagination"""
     page = int(request.args.get("page", 1))
     limit = int(request.args.get("limit", 20))
+    scan_type = request.args.get("type", "all")
     
-    reports = get_backend_data("reports", [])
+    # Fetch reports with type filter
+    endpoint = f"reports?limit={limit * page}&type={scan_type}"
+    reports = get_backend_data(endpoint, [])
     
-    # Simple pagination (you might want to implement this in backend for large datasets)
+    # Simple pagination
     total_reports = len(reports)
     start_idx = (page - 1) * limit
     end_idx = start_idx + limit
@@ -100,7 +175,8 @@ def reports_list():
                          limit=limit,
                          total=total_reports,
                          has_prev=page > 1,
-                         has_next=end_idx < total_reports)
+                         has_next=end_idx < total_reports,
+                         scan_type=scan_type)
 
 @app.route("/report/<report_id>")
 def report(report_id):
@@ -147,10 +223,14 @@ def api_stats():
     """API endpoint for dashboard stats"""
     return jsonify(get_backend_data("stats"))
 
+@app.route("/api/registry/repositories")
+def api_registry_repositories():
+    """API endpoint for registry repositories"""
+    return jsonify(get_backend_data("registry/repositories"))
+
 @app.route('/favicon.ico')
 def favicon():
     """Serve favicon or return 204 No Content to prevent 404 errors."""
-    # Option 1: Return empty response (no favicon)
     from flask import Response
     return Response(status=204)
 

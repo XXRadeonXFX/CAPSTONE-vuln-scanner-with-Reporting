@@ -1,16 +1,20 @@
 {% extends "base.html" %}
-{% block title %}Dashboard - Vulnerability Scanner{% endblock %}
+{% block title %}Dashboard - Container Registry Vulnerability Scanner{% endblock %}
 {% block content %}
 <!-- Header Section -->
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h1 class="h2 text-white mb-1">
             <i class="bi bi-speedometer2 me-2"></i>
-            Security Dashboard
+            Container Security Dashboard
         </h1>
-        <p class="text-white-50 mb-0">Monitor your container security posture</p>
+        <p class="text-white-50 mb-0">Monitor your container security posture across registries</p>
     </div>
     <div class="d-flex gap-2">
+        <a href="{{ url_for('registry_dashboard') }}" class="btn btn-outline-light">
+            <i class="bi bi-server me-1"></i>
+            Registry Manager
+        </a>
         <button class="btn btn-light" onclick="showScanModal()" data-auto-refresh="true">
             <i class="bi bi-search me-1"></i>
             Quick Scan
@@ -50,48 +54,153 @@
     <div class="col-lg-3 col-md-6 mb-3">
         <div class="card stat-card severity-low">
             <div class="card-body text-center text-white">
-                <i class="bi bi-calendar-week fs-1 mb-3"></i>
-                <h3 class="mb-1">{{ stats.recent_scans_7d or 0 }}</h3>
-                <p class="mb-0">Recent (7d)</p>
+                <i class="bi bi-server fs-1 mb-3"></i>
+                <h3 class="mb-1">{{ stats.registry_batch_scans or 0 }}</h3>
+                <p class="mb-0">Registry Scans</p>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Quick Scan Form -->
-<div class="scan-form mb-4">
-    <form method="POST" action="/">
-        <h5 class="mb-3">
-            <i class="bi bi-search me-2"></i>
-            Run Vulnerability Scan
-        </h5>
-        <div class="row g-3">
-            <div class="col-md-8">
-                <input type="text" name="image" class="form-control form-control-lg" 
-                       placeholder="Enter Docker image (e.g., nginx:latest, ubuntu:22.04)" required>
-            </div>
-            <div class="col-md-2">
-                <div class="form-check mt-2">
-                    <input class="form-check-input" type="checkbox" name="enrich_cve" checked>
-                    <label class="form-check-label">
-                        CVE Enhanced
-                    </label>
-                </div>
-            </div>
-            <div class="col-md-2">
-                <button type="submit" class="btn btn-gradient btn-lg w-100">
-                    <i class="bi bi-play-fill me-1"></i>
-                    Scan Now
+<!-- Scanning Options Tabs -->
+<div class="card mb-4">
+    <div class="card-header bg-transparent">
+        <ul class="nav nav-tabs card-header-tabs" id="scanTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="single-scan-tab" data-bs-toggle="tab" data-bs-target="#single-scan" type="button" role="tab">
+                    <i class="bi bi-box me-2"></i>Single Image Scan
                 </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="registry-scan-tab" data-bs-toggle="tab" data-bs-target="#registry-scan" type="button" role="tab">
+                    <i class="bi bi-server me-2"></i>Registry Batch Scan
+                </button>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body">
+        <div class="tab-content" id="scanTabsContent">
+            <!-- Single Image Scan -->
+            <div class="tab-pane fade show active" id="single-scan" role="tabpanel">
+                <form method="POST" action="/">
+                    <input type="hidden" name="scan_type" value="single">
+                    <h5 class="mb-3">
+                        <i class="bi bi-search me-2"></i>
+                        Run Single Image Vulnerability Scan
+                    </h5>
+                    <div class="row g-3">
+                        <div class="col-md-8">
+                            <input type="text" name="image" class="form-control form-control-lg" 
+                                   placeholder="Enter Docker image (e.g., nginx:latest, ubuntu:22.04)" required>
+                        </div>
+                        <div class="col-md-2">
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" type="checkbox" name="enrich_cve" checked>
+                                <label class="form-check-label">
+                                    CVE Enhanced
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <button type="submit" class="btn btn-gradient btn-lg w-100">
+                                <i class="bi bi-play-fill me-1"></i>
+                                Scan Now
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mt-2">
+                        <small class="text-muted">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Popular images: nginx:latest, mysql:8.0, python:3.11, node:20, ubuntu:22.04
+                        </small>
+                    </div>
+                </form>
+            </div>
+            
+            <!-- Registry Batch Scan -->
+            <div class="tab-pane fade" id="registry-scan" role="tabpanel">
+                <form method="POST" action="/" id="registryForm">
+                    <input type="hidden" name="scan_type" value="registry">
+                    <h5 class="mb-3">
+                        <i class="bi bi-server me-2"></i>
+                        Registry Batch Vulnerability Scan
+                    </h5>
+                    
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-8">
+                            <label class="form-label">Select Repositories to Scan</label>
+                            <div class="repository-selector" style="max-height: 200px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 0.375rem; padding: 0.5rem;">
+                                {% if registry_repositories %}
+                                    <div class="mb-2">
+                                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="selectAllRepositories()">
+                                            Select All Popular
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearAllRepositories()">
+                                            Clear All
+                                        </button>
+                                    </div>
+                                    {% for repo in registry_repositories[:20] %}
+                                    <div class="form-check">
+                                        <input class="form-check-input repository-checkbox" type="checkbox" 
+                                               name="repositories" value="{{ repo }}" id="repo-{{ loop.index }}">
+                                        <label class="form-check-label" for="repo-{{ loop.index }}">
+                                            <i class="bi bi-box me-1"></i>{{ repo }}
+                                        </label>
+                                    </div>
+                                    {% endfor %}
+                                    {% if registry_repositories | length > 20 %}
+                                    <div class="text-center mt-2">
+                                        <small class="text-muted">Showing first 20 repositories. Use Registry Manager for full list.</small>
+                                    </div>
+                                    {% endif %}
+                                {% else %}
+                                    <div class="text-center text-muted py-3">
+                                        <i class="bi bi-exclamation-circle fs-1 mb-2"></i>
+                                        <p>No repositories found. Check registry configuration.</p>
+                                        <a href="{{ url_for('registry_dashboard') }}" class="btn btn-outline-primary btn-sm">
+                                            Configure Registry
+                                        </a>
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label class="form-label">Max Images to Scan</label>
+                                <select class="form-select" name="max_images">
+                                    <option value="10">10 images</option>
+                                    <option value="20" selected>20 images</option>
+                                    <option value="50">50 images</option>
+                                    <option value="100">100 images</option>
+                                </select>
+                                <small class="form-text text-muted">Total images across all selected repositories</small>
+                            </div>
+                            
+                            <div class="alert alert-info">
+                                <i class="bi bi-info-circle me-2"></i>
+                                <small>
+                                    <strong>Registry Scan Info:</strong><br>
+                                    • Scans latest tags from selected repositories<br>
+                                    • Results are cached for 24 hours<br>
+                                    • Large scans may take several minutes
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge bg-info" id="selectedCount">0 repositories selected</span>
+                        </div>
+                        <button type="submit" class="btn btn-gradient btn-lg" id="registrySubmitBtn" disabled>
+                            <i class="bi bi-server me-1"></i>
+                            Start Registry Scan
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
-        <div class="mt-2">
-            <small class="text-muted">
-                <i class="bi bi-info-circle me-1"></i>
-                Popular images: nginx:latest, mysql:8.0, python:3.11, node:20, ubuntu:22.04
-            </small>
-        </div>
-    </form>
+    </div>
 </div>
 
 <!-- Recent Reports -->
@@ -102,10 +211,22 @@
                 <i class="bi bi-clock-history me-2"></i>
                 Recent Scan Reports
             </h5>
-            <a href="{{ url_for('reports_list') }}" class="btn btn-outline-primary btn-sm">
-                <i class="bi bi-arrow-right me-1"></i>
-                View All Reports
-            </a>
+            <div class="d-flex gap-2">
+                <div class="btn-group btn-group-sm" role="group">
+                    <input type="radio" class="btn-check" name="reportFilter" id="filterAll" autocomplete="off" checked>
+                    <label class="btn btn-outline-primary" for="filterAll">All</label>
+                    
+                    <input type="radio" class="btn-check" name="reportFilter" id="filterSingle" autocomplete="off">
+                    <label class="btn btn-outline-primary" for="filterSingle">Single</label>
+                    
+                    <input type="radio" class="btn-check" name="reportFilter" id="filterRegistry" autocomplete="off">
+                    <label class="btn btn-outline-primary" for="filterRegistry">Registry</label>
+                </div>
+                <a href="{{ url_for('reports_list') }}" class="btn btn-outline-primary btn-sm">
+                    <i class="bi bi-arrow-right me-1"></i>
+                    View All Reports
+                </a>
+            </div>
         </div>
     </div>
     <div class="card-body p-0">
@@ -114,7 +235,7 @@
                 <table class="table table-hover mb-0">
                     <thead class="bg-light">
                         <tr>
-                            <th><i class="bi bi-box me-1"></i>Image</th>
+                            <th><i class="bi bi-box me-1"></i>Image/Type</th>
                             <th><i class="bi bi-shield-check me-1"></i>Risk Level</th>
                             <th><i class="bi bi-bug me-1"></i>Vulnerabilities</th>
                             <th><i class="bi bi-clock me-1"></i>Scanned</th>
@@ -123,49 +244,73 @@
                     </thead>
                     <tbody>
                         {% for report in reports %}
-                        <tr>
+                        <tr data-scan-type="{{ report.scan_type or 'single' }}">
                             <td>
                                 <div class="d-flex align-items-center">
-                                    <i class="bi bi-box text-primary me-2"></i>
-                                    <div>
-                                        <div class="fw-semibold">{{ report.image }}</div>
-                                        {% if report.enriched %}
-                                            <small class="text-success">
-                                                <i class="bi bi-database me-1"></i>CVE Enhanced
-                                            </small>
+                                    {% if report.scan_type == 'registry_batch' %}
+                                        <i class="bi bi-server text-primary me-2"></i>
+                                        <div>
+                                            <div class="fw-semibold">Registry Batch Scan</div>
+                                            <small class="text-muted">Multiple repositories</small>
+                                        </div>
+                                    {% else %}
+                                        <i class="bi bi-box text-primary me-2"></i>
+                                        <div>
+                                            <div class="fw-semibold">{{ report.image }}</div>
+                                            {% if report.enriched %}
+                                                <small class="text-success">
+                                                    <i class="bi bi-database me-1"></i>CVE Enhanced
+                                                </small>
+                                            {% endif %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td>
+                                {% if report.summary %}
+                                    {% set risk_level, risk_class = report.summary | risk_level %}
+                                    <span class="badge bg-{{ risk_class }}">{{ risk_level }}</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">N/A</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if report.summary %}
+                                    <div class="d-flex gap-1">
+                                        {% if report.summary.CRITICAL > 0 %}
+                                            <span class="badge bg-danger">{{ report.summary.CRITICAL }}C</span>
+                                        {% endif %}
+                                        {% if report.summary.HIGH > 0 %}
+                                            <span class="badge bg-warning">{{ report.summary.HIGH }}H</span>
+                                        {% endif %}
+                                        {% if report.summary.MEDIUM > 0 %}
+                                            <span class="badge bg-info">{{ report.summary.MEDIUM }}M</span>
+                                        {% endif %}
+                                        {% if report.summary.LOW > 0 %}
+                                            <span class="badge bg-success">{{ report.summary.LOW }}L</span>
                                         {% endif %}
                                     </div>
-                                </div>
-                            </td>
-                            <td>
-                                {% set risk_level, risk_class = report.summary | risk_level %}
-                                <span class="badge bg-{{ risk_class }}">{{ risk_level }}</span>
-                            </td>
-                            <td>
-                                <div class="d-flex gap-1">
-                                    {% if report.summary.CRITICAL > 0 %}
-                                        <span class="badge bg-danger">{{ report.summary.CRITICAL }}C</span>
-                                    {% endif %}
-                                    {% if report.summary.HIGH > 0 %}
-                                        <span class="badge bg-warning">{{ report.summary.HIGH }}H</span>
-                                    {% endif %}
-                                    {% if report.summary.MEDIUM > 0 %}
-                                        <span class="badge bg-info">{{ report.summary.MEDIUM }}M</span>
-                                    {% endif %}
-                                    {% if report.summary.LOW > 0 %}
-                                        <span class="badge bg-success">{{ report.summary.LOW }}L</span>
-                                    {% endif %}
-                                </div>
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
                             </td>
                             <td>
                                 <small class="text-muted">{{ report.created_at | datetime }}</small>
                             </td>
                             <td>
-                                <a href="{{ url_for('report', report_id=report.id) }}" 
-                                   class="btn btn-sm btn-outline-primary">
-                                    <i class="bi bi-eye me-1"></i>
-                                    View
-                                </a>
+                                {% if report.scan_type == 'registry_batch' %}
+                                    <a href="{{ url_for('registry_scan_results', scan_id=report.id) }}" 
+                                       class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-eye me-1"></i>
+                                        View Batch
+                                    </a>
+                                {% else %}
+                                    <a href="{{ url_for('report', report_id=report.id) }}" 
+                                       class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-eye me-1"></i>
+                                        View
+                                    </a>
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}
@@ -181,4 +326,74 @@
         {% endif %}
     </div>
 </div>
+
+<script>
+// Repository selection handling
+function updateRepositorySelection() {
+    const checkboxes = document.querySelectorAll('.repository-checkbox:checked');
+    const count = checkboxes.length;
+    const countBadge = document.getElementById('selectedCount');
+    const submitBtn = document.getElementById('registrySubmitBtn');
+    
+    countBadge.textContent = `${count} repositories selected`;
+    submitBtn.disabled = count === 0;
+    
+    if (count > 0) {
+        submitBtn.classList.remove('btn-secondary');
+        submitBtn.classList.add('btn-gradient');
+    } else {
+        submitBtn.classList.remove('btn-gradient');
+        submitBtn.classList.add('btn-secondary');
+    }
+}
+
+function selectAllRepositories() {
+    const checkboxes = document.querySelectorAll('.repository-checkbox');
+    const popularRepos = ['nginx', 'alpine', 'ubuntu', 'node', 'python', 'mysql', 'postgres', 'redis'];
+    
+    checkboxes.forEach(checkbox => {
+        if (popularRepos.includes(checkbox.value)) {
+            checkbox.checked = true;
+        }
+    });
+    updateRepositorySelection();
+}
+
+function clearAllRepositories() {
+    const checkboxes = document.querySelectorAll('.repository-checkbox');
+    checkboxes.forEach(checkbox => checkbox.checked = false);
+    updateRepositorySelection();
+}
+
+// Report filtering
+function filterReports(scanType) {
+    const rows = document.querySelectorAll('tbody tr[data-scan-type]');
+    rows.forEach(row => {
+        const rowType = row.getAttribute('data-scan-type');
+        if (scanType === 'all' || rowType === scanType) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+
+// Initialize event listeners
+document.addEventListener('DOMContentLoaded', function() {
+    // Repository selection
+    const checkboxes = document.querySelectorAll('.repository-checkbox');
+    checkboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', updateRepositorySelection);
+    });
+    
+    // Report filters
+    document.getElementById('filterAll').addEventListener('change', () => filterReports('all'));
+    document.getElementById('filterSingle').addEventListener('change', () => filterReports('single'));
+    document.getElementById('filterRegistry').addEventListener('change', () => filterReports('registry_batch'));
+    
+    // Initial state
+    updateRepositorySelection();
+});
+</script>
+
 {% endblock %}
