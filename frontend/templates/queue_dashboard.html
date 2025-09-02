@@ -1,0 +1,783 @@
+{% extends "base.html" %}
+
+{% block title %}Scan Queue - Container Vulnerability Scanner{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ url_for('index') }}" class="text-white">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="{{ url_for('monitoring_dashboard') }}" class="text-white">Monitoring</a></li>
+                <li class="breadcrumb-item active text-white-50">Scan Queue</li>
+            </ol>
+        </nav>
+        <h1 class="h2 text-white mb-1">
+            <i class="bi bi-list-ul me-2"></i>
+            Scan Queue Management
+        </h1>
+        <p class="text-white-50 mb-0">Monitor and manage vulnerability scan queue</p>
+    </div>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-light" onclick="refreshQueue()">
+            <i class="bi bi-arrow-clockwise me-1"></i>
+            Refresh
+        </button>
+        <button class="btn btn-outline-danger" onclick="clearCompletedItems()">
+            <i class="bi bi-trash me-1"></i>
+            Clear Completed
+        </button>
+    </div>
+</div>
+
+<!-- Queue Summary Cards -->
+<div class="row mb-4">
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card stat-card severity-medium">
+            <div class="card-body text-center text-white">
+                <i class="bi bi-hourglass-split fs-1 mb-3"></i>
+                <h3 class="mb-1" data-queue-stat="queued">{{ queue_data.summary.queued or 0 }}</h3>
+                <p class="mb-0">Queued</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card stat-card severity-high">
+            <div class="card-body text-center text-white">
+                <i class="bi bi-gear-fill fs-1 mb-3 rotating"></i>
+                <h3 class="mb-1" data-queue-stat="processing">{{ queue_data.summary.processing or 0 }}</h3>
+                <p class="mb-0">Processing</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card stat-card severity-low">
+            <div class="card-body text-center text-white">
+                <i class="bi bi-check-circle fs-1 mb-3"></i>
+                <h3 class="mb-1" data-queue-stat="completed">{{ queue_data.summary.completed or 0 }}</h3>
+                <p class="mb-0">Completed</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card stat-card severity-critical">
+            <div class="card-body text-center text-white">
+                <i class="bi bi-x-circle fs-1 mb-3"></i>
+                <h3 class="mb-1" data-queue-stat="failed">{{ queue_data.summary.failed or 0 }}</h3>
+                <p class="mb-0">Failed</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Queue Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label for="statusFilter" class="form-label">Filter by Status</label>
+                <select class="form-select" id="statusFilter" onchange="filterQueue()">
+                    <option value="">All Statuses</option>
+                    <option value="queued" {% if status_filter == 'queued' %}selected{% endif %}>Queued</option>
+                    <option value="processing" {% if status_filter == 'processing' %}selected{% endif %}>Processing</option>
+                    <option value="completed" {% if status_filter == 'completed' %}selected{% endif %}>Completed</option>
+                    <option value="failed" {% if status_filter == 'failed' %}selected{% endif %}>Failed</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="priorityFilter" class="form-label">Filter by Priority</label>
+                <select class="form-select" id="priorityFilter" onchange="filterQueue()">
+                    <option value="">All Priorities</option>
+                    <option value="high">High Priority</option>
+                    <option value="normal">Normal Priority</option>
+                    <option value="low">Low Priority</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label for="imageSearch" class="form-label">Search Images</label>
+                <div class="input-group">
+                    <span class="input-group-text">
+                        <i class="bi bi-search"></i>
+                    </span>
+                    <input type="text" class="form-control" id="imageSearch" 
+                           placeholder="Search by image name..." onkeyup="searchImages()">
+                </div>
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-outline-secondary w-100" onclick="clearFilters()">
+                    <i class="bi bi-x-circle me-1"></i>
+                    Clear
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Queue Items -->
+<div class="card">
+    <div class="card-header bg-transparent">
+        <div class="d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">
+                <i class="bi bi-list-check me-2"></i>
+                Queue Items
+            </h5>
+            <div class="d-flex gap-2">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="autoRefreshToggle" checked>
+                    <label class="form-check-label" for="autoRefreshToggle">
+                        Auto-refresh
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        {% if queue_data.items %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="bg-light sticky-top">
+                    <tr>
+                        <th><i class="bi bi-box me-1"></i>Image</th>
+                        <th><i class="bi bi-flag me-1"></i>Priority</th>
+                        <th><i class="bi bi-activity me-1"></i>Status</th>
+                        <th><i class="bi bi-clock me-1"></i>Queued At</th>
+                        <th><i class="bi bi-arrow-repeat me-1"></i>Attempts</th>
+                        <th><i class="bi bi-stopwatch me-1"></i>Duration</th>
+                        <th><i class="bi bi-gear me-1"></i>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="queueTableBody">
+                    {% for item in queue_data.items %}
+                    <tr class="queue-item" 
+                        data-status="{{ item.status }}" 
+                        data-priority="{{ item.priority }}"
+                        data-image="{{ item.image.lower() }}">
+                        <td>
+                            <div class="d-flex align-items-center">
+                                {% if item.auto_triggered %}
+                                    <i class="bi bi-robot text-primary me-2" title="Auto-triggered"></i>
+                                {% else %}
+                                    <i class="bi bi-person text-secondary me-2" title="Manual"></i>
+                                {% endif %}
+                                <div>
+                                    <div class="fw-semibold">{{ item.image }}</div>
+                                    {% if item.repository %}
+                                        <small class="text-muted">{{ item.repository }}</small>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="badge bg-{{ 'danger' if item.priority == 'high' else 'warning' if item.priority == 'normal' else 'secondary' }}">
+                                {{ item.priority.title() }}
+                            </span>
+                        </td>
+                        <td>
+                            {% if item.status == 'queued' %}
+                                <span class="badge bg-warning">
+                                    <i class="bi bi-hourglass-split me-1"></i>Queued
+                                </span>
+                            {% elif item.status == 'processing' %}
+                                <span class="badge bg-primary">
+                                    <i class="bi bi-gear-fill rotating me-1"></i>Processing
+                                </span>
+                            {% elif item.status == 'completed' %}
+                                <span class="badge bg-success">
+                                    <i class="bi bi-check-circle me-1"></i>Completed
+                                </span>
+                            {% elif item.status == 'failed' %}
+                                <span class="badge bg-danger">
+                                    <i class="bi bi-x-circle me-1"></i>Failed
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small class="text-muted">{{ item.queued_at | time_ago if item.queued_at else 'N/A' }}</small>
+                        </td>
+                        <td>
+                            <span class="badge bg-info">{{ item.attempts or 0 }}</span>
+                        </td>
+                        <td>
+                            {% if item.status == 'completed' and item.completed_at and item.started_at %}
+                                {% set duration_seconds = ((item.completed_at | replace('T', ' ') | replace('Z', '') | strptime('%Y-%m-%d %H:%M:%S')) - (item.started_at | replace('T', ' ') | replace('Z', '') | strptime('%Y-%m-%d %H:%M:%S'))).total_seconds() %}
+                                <small class="text-success">{{ "%.1f"|format(duration_seconds) }}s</small>
+                            {% elif item.status == 'processing' and item.started_at %}
+                                <small class="text-primary">
+                                    <i class="bi bi-hourglass-split"></i>
+                                    Running...
+                                </small>
+                            {% else %}
+                                <small class="text-muted">-</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                {% if item.status == 'completed' and item.report_id %}
+                                    <a href="/report/{{ item.report_id }}" class="btn btn-outline-primary" title="View Report">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                {% endif %}
+                                
+                                {% if item.status == 'failed' %}
+                                    <button class="btn btn-outline-warning" onclick="retryItem('{{ item._id }}')" title="Retry">
+                                        <i class="bi bi-arrow-clockwise"></i>
+                                    </button>
+                                    <button class="btn btn-outline-info" onclick="showError('{{ item.error_message or item.last_error }}')" title="Show Error">
+                                        <i class="bi bi-info-circle"></i>
+                                    </button>
+                                {% endif %}
+                                
+                                {% if item.status in ['completed', 'failed'] %}
+                                    <button class="btn btn-outline-danger" onclick="removeItem('{{ item._id }}')" title="Remove">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Pagination -->
+        {% if queue_data.pagination.total > queue_data.pagination.limit %}
+        <nav class="mt-3" aria-label="Queue pagination">
+            <ul class="pagination justify-content-center mb-0">
+                {% if queue_data.pagination.has_prev %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ queue_data.pagination.page - 1 }}{% if status_filter %}&status={{ status_filter }}{% endif %}">
+                            <i class="bi bi-chevron-left"></i>
+                            Previous
+                        </a>
+                    </li>
+                {% endif %}
+                
+                {% set start_page = [1, queue_data.pagination.page - 2] | max %}
+                {% set end_page = [start_page + 4, (queue_data.pagination.total // queue_data.pagination.limit) + 1] | min %}
+                
+                {% for p in range(start_page, end_page + 1) %}
+                    {% if p == queue_data.pagination.page %}
+                        <li class="page-item active">
+                            <span class="page-link">{{ p }}</span>
+                        </li>
+                    {% else %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ p }}{% if status_filter %}&status={{ status_filter }}{% endif %}">{{ p }}</a>
+                        </li>
+                    {% endif %}
+                {% endfor %}
+                
+                {% if queue_data.pagination.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ queue_data.pagination.page + 1 }}{% if status_filter %}&status={{ status_filter }}{% endif %}">
+                            Next
+                            <i class="bi bi-chevron-right"></i>
+                        </a>
+                    </li>
+                {% endif %}
+            </ul>
+            
+            <div class="text-center mt-2 text-muted small">
+                Showing {{ ((queue_data.pagination.page - 1) * queue_data.pagination.limit + 1) }} to 
+                {{ [queue_data.pagination.page * queue_data.pagination.limit, queue_data.pagination.total] | min }} 
+                of {{ queue_data.pagination.total }} items
+            </div>
+        </nav>
+        {% endif %}
+        
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-list-check fs-1 mb-3"></i>
+            <h4>Queue is empty</h4>
+            <p class="mb-4">No items in the scan queue</p>
+            <a href="{{ url_for('monitoring_dashboard') }}" class="btn btn-outline-primary">
+                <i class="bi bi-arrow-left me-1"></i>
+                Back to Monitoring
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Error Modal -->
+<div class="modal fade" id="errorModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-exclamation-triangle text-warning me-2"></i>
+                    Scan Error Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-danger">
+                    <pre id="errorDetails" class="mb-0"></pre>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="copyErrorToClipboard()">
+                    <i class="bi bi-clipboard me-1"></i>
+                    Copy Error
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast Notifications -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1050;">
+    <div class="toast align-items-center text-white bg-success border-0" id="successToast" role="alert">
+        <div class="d-flex">
+            <div class="toast-body">
+                <i class="bi bi-check-circle me-2"></i>
+                <span id="successMessage">Action completed</span>
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+
+<script>
+let autoRefreshInterval;
+let currentErrorMessage = '';
+
+// Initialize
+document.addEventListener('DOMContentLoaded', function() {
+    setupAutoRefresh();
+});
+
+// Auto-refresh functionality
+function setupAutoRefresh() {
+    const toggle = document.getElementById('autoRefreshToggle');
+    
+    if (toggle.checked) {
+        startAutoRefresh();
+    }
+    
+    toggle.addEventListener('change', function() {
+        if (this.checked) {
+            startAutoRefresh();
+        } else {
+            stopAutoRefresh();
+        }
+    });
+}
+
+function startAutoRefresh() {
+    autoRefreshInterval = setInterval(async function() {
+        try {
+            await updateQueueData();
+        } catch (error) {
+            console.error('Auto-refresh failed:', error);
+        }
+    }, 5000); // Update every 5 seconds
+}
+
+function stopAutoRefresh() {
+    if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = null;
+    }
+}
+
+async function updateQueueData() {
+    try {
+        const currentUrl = new URL(window.location);
+        const params = currentUrl.searchParams;
+        
+        let apiUrl = '/api/queue/status';
+        const urlParams = new URLSearchParams();
+        
+        if (params.get('page')) urlParams.set('page', params.get('page'));
+        if (params.get('status')) urlParams.set('status', params.get('status'));
+        if (params.get('limit')) urlParams.set('limit', params.get('limit'));
+        
+        if (urlParams.toString()) {
+            apiUrl += '?' + urlParams.toString();
+        }
+        
+        const response = await fetch(apiUrl);
+        const data = await response.json();
+        
+        updateQueueSummary(data.summary);
+        updateQueueTable(data.items);
+        
+    } catch (error) {
+        console.error('Failed to update queue data:', error);
+    }
+}
+
+function updateQueueSummary(summary) {
+    Object.keys(summary).forEach(status => {
+        const element = document.querySelector(`[data-queue-stat="${status}"]`);
+        if (element) {
+            element.textContent = summary[status];
+        }
+    });
+}
+
+function updateQueueTable(items) {
+    const tbody = document.getElementById('queueTableBody');
+    if (!tbody || !items) return;
+    
+    // Store current scroll position
+    const scrollPosition = window.scrollY;
+    
+    // Clear existing rows
+    tbody.innerHTML = '';
+    
+    // Add updated rows
+    items.forEach(item => {
+        const row = createQueueRow(item);
+        tbody.appendChild(row);
+    });
+    
+    // Restore scroll position
+    window.scrollTo(0, scrollPosition);
+}
+
+function createQueueRow(item) {
+    const row = document.createElement('tr');
+    row.className = 'queue-item';
+    row.setAttribute('data-status', item.status);
+    row.setAttribute('data-priority', item.priority);
+    row.setAttribute('data-image', item.image.toLowerCase());
+    
+    row.innerHTML = `
+        <td>
+            <div class="d-flex align-items-center">
+                ${item.auto_triggered ? '<i class="bi bi-robot text-primary me-2" title="Auto-triggered"></i>' : '<i class="bi bi-person text-secondary me-2" title="Manual"></i>'}
+                <div>
+                    <div class="fw-semibold">${item.image}</div>
+                    ${item.repository ? `<small class="text-muted">${item.repository}</small>` : ''}
+                </div>
+            </div>
+        </td>
+        <td>
+            <span class="badge bg-${item.priority === 'high' ? 'danger' : item.priority === 'normal' ? 'warning' : 'secondary'}">
+                ${item.priority.charAt(0).toUpperCase() + item.priority.slice(1)}
+            </span>
+        </td>
+        <td>
+            ${getStatusBadge(item.status)}
+        </td>
+        <td>
+            <small class="text-muted">${formatTimeAgo(item.queued_at)}</small>
+        </td>
+        <td>
+            <span class="badge bg-info">${item.attempts || 0}</span>
+        </td>
+        <td>
+            ${getDurationDisplay(item)}
+        </td>
+        <td>
+            <div class="btn-group btn-group-sm">
+                ${getActionButtons(item)}
+            </div>
+        </td>
+    `;
+    
+    return row;
+}
+
+function getStatusBadge(status) {
+    const badges = {
+        queued: '<span class="badge bg-warning"><i class="bi bi-hourglass-split me-1"></i>Queued</span>',
+        processing: '<span class="badge bg-primary"><i class="bi bi-gear-fill rotating me-1"></i>Processing</span>',
+        completed: '<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Completed</span>',
+        failed: '<span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Failed</span>'
+    };
+    return badges[status] || `<span class="badge bg-secondary">${status}</span>`;
+}
+
+function getDurationDisplay(item) {
+    if (item.status === 'completed' && item.completed_at && item.started_at) {
+        const duration = (new Date(item.completed_at) - new Date(item.started_at)) / 1000;
+        return `<small class="text-success">${duration.toFixed(1)}s</small>`;
+    } else if (item.status === 'processing' && item.started_at) {
+        return '<small class="text-primary"><i class="bi bi-hourglass-split"></i> Running...</small>';
+    }
+    return '<small class="text-muted">-</small>';
+}
+
+function getActionButtons(item) {
+    let buttons = '';
+    
+    if (item.status === 'completed' && item.report_id) {
+        buttons += `<a href="/report/${item.report_id}" class="btn btn-outline-primary" title="View Report"><i class="bi bi-eye"></i></a>`;
+    }
+    
+    if (item.status === 'failed') {
+        buttons += `<button class="btn btn-outline-warning" onclick="retryItem('${item._id}')" title="Retry"><i class="bi bi-arrow-clockwise"></i></button>`;
+        buttons += `<button class="btn btn-outline-info" onclick="showError('${item.error_message || item.last_error || 'Unknown error'}')" title="Show Error"><i class="bi bi-info-circle"></i></button>`;
+    }
+    
+    if (['completed', 'failed'].includes(item.status)) {
+        buttons += `<button class="btn btn-outline-danger" onclick="removeItem('${item._id}')" title="Remove"><i class="bi bi-trash"></i></button>`;
+    }
+    
+    return buttons;
+}
+
+// Filtering functions
+function filterQueue() {
+    const statusFilter = document.getElementById('statusFilter').value;
+    const priorityFilter = document.getElementById('priorityFilter').value;
+    
+    const url = new URL(window.location);
+    url.searchParams.set('page', '1'); // Reset to first page
+    
+    if (statusFilter) {
+        url.searchParams.set('status', statusFilter);
+    } else {
+        url.searchParams.delete('status');
+    }
+    
+    if (priorityFilter) {
+        url.searchParams.set('priority', priorityFilter);
+    } else {
+        url.searchParams.delete('priority');
+    }
+    
+    window.location.href = url.toString();
+}
+
+function searchImages() {
+    const searchTerm = document.getElementById('imageSearch').value.toLowerCase();
+    const rows = document.querySelectorAll('.queue-item');
+    
+    rows.forEach(row => {
+        const imageName = row.getAttribute('data-image');
+        if (!searchTerm || imageName.includes(searchTerm)) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+
+function clearFilters() {
+    document.getElementById('statusFilter').value = '';
+    document.getElementById('priorityFilter').value = '';
+    document.getElementById('imageSearch').value = '';
+    
+    const url = new URL(window.location);
+    url.searchParams.delete('status');
+    url.searchParams.delete('priority');
+    
+    window.location.href = url.toString();
+}
+
+// Action functions
+function refreshQueue() {
+    window.location.reload();
+}
+
+async function clearCompletedItems() {
+    try {
+        const response = await fetch('/queue/clear', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                statuses: ['completed', 'failed']
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            showSuccessToast(`Cleared ${result.deleted_count} items from queue`);
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            throw new Error(result.error || 'Failed to clear items');
+        }
+    } catch (error) {
+        showErrorToast('Failed to clear completed items: ' + error.message);
+    }
+}
+
+async function retryItem(itemId) {
+    // This would typically make an API call to retry the item
+    showSuccessToast('Retry functionality not implemented yet');
+}
+
+async function removeItem(itemId) {
+    if (!confirm('Are you sure you want to remove this item?')) {
+        return;
+    }
+    
+    // This would typically make an API call to remove the item
+    showSuccessToast('Remove functionality not implemented yet');
+}
+
+function showError(errorMessage) {
+    currentErrorMessage = errorMessage || 'No error details available';
+    document.getElementById('errorDetails').textContent = currentErrorMessage;
+    const modal = new bootstrap.Modal(document.getElementById('errorModal'));
+    modal.show();
+}
+
+function copyErrorToClipboard() {
+    navigator.clipboard.writeText(currentErrorMessage).then(() => {
+        showSuccessToast('Error details copied to clipboard');
+    }).catch(() => {
+        showErrorToast('Failed to copy error details');
+    });
+}
+
+// Helper functions
+function formatTimeAgo(dateString) {
+    if (!dateString) return 'N/A';
+    
+    const now = new Date();
+    const date = new Date(dateString);
+    const diffInMinutes = Math.floor((now - date) / (1000 * 60));
+    
+    if (diffInMinutes < 1) return 'Just now';
+    if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+    if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h ago`;
+    return `${Math.floor(diffInMinutes / 1440)}d ago`;
+}
+
+function showSuccessToast(message) {
+    const toast = document.getElementById('successToast');
+    const messageEl = document.getElementById('successMessage');
+    messageEl.textContent = message;
+    
+    const bsToast = new bootstrap.Toast(toast);
+    bsToast.show();
+}
+
+function showErrorToast(message) {
+    const toastHtml = `
+        <div class="toast align-items-center text-white bg-danger border-0" role="alert">
+            <div class="d-flex">
+                <div class="toast-body">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    ${message}
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>
+        </div>
+    `;
+    
+    const toastContainer = document.querySelector('.position-fixed.bottom-0.end-0');
+    toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+    
+    const newToast = toastContainer.lastElementChild;
+    const bsToast = new bootstrap.Toast(newToast);
+    bsToast.show();
+    
+    newToast.addEventListener('hidden.bs.toast', () => {
+        newToast.remove();
+    });
+}
+
+// Cleanup
+window.addEventListener('beforeunload', function() {
+    stopAutoRefresh();
+});
+</script>
+
+<style>
+.rotating {
+    animation: rotation 1s infinite linear;
+}
+
+@keyframes rotation {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(359deg);
+    }
+}
+
+.stat-card {
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+    animation: shimmer 3s infinite;
+}
+
+@keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+
+.queue-item {
+    transition: background-color 0.2s ease;
+}
+
+.queue-item:hover {
+    background-color: rgba(102, 126, 234, 0.05);
+}
+
+.badge {
+    font-size: 0.75em;
+}
+
+.btn-group-sm > .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+}
+
+.form-check-input:checked {
+    background-color: #667eea;
+    border-color: #667eea;
+}
+
+.page-link {
+    color: #667eea;
+}
+
+.page-link:hover {
+    color: #5a67d8;
+    background-color: #e3f2fd;
+    border-color: #667eea;
+}
+
+.page-item.active .page-link {
+    background-color: #667eea;
+    border-color: #667eea;
+}
+
+pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-size: 0.875rem;
+}
+
+@media (max-width: 768px) {
+    .btn-group {
+        flex-direction: column;
+    }
+    
+    .table-responsive {
+        font-size: 0.875rem;
+    }
+    
+    .stat-card {
+        margin-bottom: 1rem;
+    }
+}
+</style>
+{% endblock %}

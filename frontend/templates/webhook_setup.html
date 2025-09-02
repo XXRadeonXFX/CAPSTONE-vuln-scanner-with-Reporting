@@ -1,0 +1,617 @@
+{% extends "base.html" %}
+
+{% block title %}Webhook Setup - Container Vulnerability Scanner{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ url_for('index') }}" class="text-white">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="{{ url_for('monitoring_dashboard') }}" class="text-white">Monitoring</a></li>
+                <li class="breadcrumb-item active text-white-50">Webhook Setup</li>
+            </ol>
+        </nav>
+        <h1 class="h2 text-white mb-1">
+            <i class="bi bi-webhook me-2"></i>
+            Docker Hub Webhook Setup
+        </h1>
+        <p class="text-white-50 mb-0">Configure Docker Hub webhooks for instant vulnerability scanning</p>
+    </div>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-light" onclick="testWebhook()">
+            <i class="bi bi-play-circle me-1"></i>
+            Test Webhook
+        </button>
+        <button class="btn btn-light" onclick="copyWebhookUrl()">
+            <i class="bi bi-clipboard me-1"></i>
+            Copy URL
+        </button>
+    </div>
+</div>
+
+<!-- Webhook URL Card -->
+<div class="card mb-4">
+    <div class="card-header bg-transparent">
+        <h5 class="card-title mb-0">
+            <i class="bi bi-link-45deg me-2"></i>
+            Webhook Endpoint
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="alert alert-info">
+            <i class="bi bi-info-circle me-2"></i>
+            <strong>Copy this URL and add it to your Docker Hub repository webhooks:</strong>
+        </div>
+        
+        <div class="input-group mb-3">
+            <span class="input-group-text">
+                <i class="bi bi-webhook"></i>
+            </span>
+            <input type="text" class="form-control" id="webhookUrl" 
+                   value="{{ backend_url }}/webhook/dockerhub" readonly>
+            <button class="btn btn-outline-secondary" onclick="copyWebhookUrl()">
+                <i class="bi bi-clipboard"></i>
+            </button>
+        </div>
+        
+        <div class="row g-3">
+            <div class="col-md-6">
+                <strong>Webhook Type:</strong> Repository Push
+            </div>
+            <div class="col-md-6">
+                <strong>Content Type:</strong> application/json
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Step-by-Step Instructions -->
+<div class="card mb-4">
+    <div class="card-header bg-transparent">
+        <h5 class="card-title mb-0">
+            <i class="bi bi-list-ol me-2"></i>
+            Setup Instructions
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-lg-8">
+                <div class="setup-steps">
+                    <div class="step-item">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <h6>Navigate to Docker Hub</h6>
+                            <p class="mb-2">Go to <a href="https://hub.docker.com" target="_blank" class="text-decoration-none">Docker Hub</a> and sign in to your account.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="step-item">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <h6>Select Repository</h6>
+                            <p class="mb-2">Choose the repository you want to monitor (e.g., <code>{{ backend_info.monitoring_config.dockerhub_username or 'your-username' }}/your-repo</code>).</p>
+                        </div>
+                    </div>
+                    
+                    <div class="step-item">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <h6>Open Webhooks Settings</h6>
+                            <p class="mb-2">Click on the repository, go to <strong>Settings</strong> → <strong>Webhooks</strong>.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="step-item">
+                        <div class="step-number">4</div>
+                        <div class="step-content">
+                            <h6>Add New Webhook</h6>
+                            <p class="mb-2">Click <strong>"Create Webhook"</strong> and configure:</p>
+                            <ul class="list-unstyled ms-3">
+                                <li><i class="bi bi-check-circle text-success me-2"></i><strong>Webhook name:</strong> Vulnerability Scanner</li>
+                                <li><i class="bi bi-check-circle text-success me-2"></i><strong>Webhook URL:</strong> <code id="urlForCopy">{{ backend_url }}/webhook/dockerhub</code></li>
+                                <li><i class="bi bi-check-circle text-success me-2"></i><strong>Triggers:</strong> Repository push</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="step-item">
+                        <div class="step-number">5</div>
+                        <div class="step-content">
+                            <h6>Save and Test</h6>
+                            <p class="mb-2">Save the webhook and push a new image to test automatic scanning.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-4">
+                <div class="card bg-light">
+                    <div class="card-body">
+                        <h6 class="card-title">
+                            <i class="bi bi-lightbulb me-2"></i>
+                            Pro Tips
+                        </h6>
+                        <ul class="list-unstyled small">
+                            <li class="mb-2">
+                                <i class="bi bi-check-circle text-success me-2"></i>
+                                Set up webhooks for all your critical repositories
+                            </li>
+                            <li class="mb-2">
+                                <i class="bi bi-check-circle text-success me-2"></i>
+                                Test webhooks after setup to ensure they work
+                            </li>
+                            <li class="mb-2">
+                                <i class="bi bi-check-circle text-success me-2"></i>
+                                Monitor the scan queue for webhook-triggered scans
+                            </li>
+                            <li class="mb-2">
+                                <i class="bi bi-check-circle text-success me-2"></i>
+                                Enable Slack notifications for real-time alerts
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Configuration Status -->
+<div class="row mb-4">
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header bg-transparent">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-gear me-2"></i>
+                    System Configuration
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="configuration-item">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span>Auto-scan enabled:</span>
+                        {% if backend_info.monitoring and backend_info.monitoring.auto_scan_enabled %}
+                            <span class="badge bg-success">✓ Enabled</span>
+                        {% else %}
+                            <span class="badge bg-danger">✗ Disabled</span>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span>Webhook endpoint:</span>
+                        <span class="badge bg-info">Ready</span>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span>Docker Hub connected:</span>
+                        {% if backend_info.monitoring_config and backend_info.monitoring_config.dockerhub_username %}
+                            <span class="badge bg-success">✓ Connected</span>
+                        {% else %}
+                            <span class="badge bg-warning">⚠ Check Config</span>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span>Slack notifications:</span>
+                        {% if backend_info.monitoring_config and backend_info.monitoring_config.slack_webhook %}
+                            <span class="badge bg-success">✓ Configured</span>
+                        {% else %}
+                            <span class="badge bg-secondary">○ Optional</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header bg-transparent">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-activity me-2"></i>
+                    Webhook Activity
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="webhookActivity">
+                    <div class="text-center text-muted py-3">
+                        <i class="bi bi-hourglass-split fs-3 mb-2"></i>
+                        <p class="mb-0">No webhook activity yet</p>
+                        <small>Push an image to see webhook events here</small>
+                    </div>
+                </div>
+                
+                <div class="mt-3">
+                    <button class="btn btn-sm btn-outline-primary w-100" onclick="refreshActivity()">
+                        <i class="bi bi-arrow-clockwise me-1"></i>
+                        Refresh Activity
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Example Webhook Payload -->
+<div class="card mb-4">
+    <div class="card-header bg-transparent">
+        <div class="d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">
+                <i class="bi bi-code me-2"></i>
+                Example Webhook Payload
+            </h5>
+            <button class="btn btn-sm btn-outline-secondary" onclick="togglePayloadExample()">
+                <i class="bi bi-eye" id="payloadToggleIcon"></i>
+                <span id="payloadToggleText">Show</span>
+            </button>
+        </div>
+    </div>
+    <div class="card-body d-none" id="payloadExample">
+        <p class="text-muted mb-3">This is what Docker Hub will send to your webhook endpoint when an image is pushed:</p>
+        
+        <pre class="bg-dark text-light p-3 rounded"><code id="examplePayload">{
+  "push_data": {
+    "pushed_at": "2024-01-15T10:30:00.000Z",
+    "images": [],
+    "tag": "latest",
+    "pusher": "your-username"
+  },
+  "callback_url": "https://registry.hub.docker.com/u/your-username/your-repo/hook/callback/",
+  "repository": {
+    "status": "Active",
+    "description": "Your repository description",
+    "is_trusted": false,
+    "full_description": "",
+    "repo_url": "https://hub.docker.com/r/your-username/your-repo",
+    "owner": "your-username",
+    "is_official": false,
+    "is_private": false,
+    "name": "your-repo",
+    "namespace": "your-username",
+    "star_count": 0,
+    "comment_count": 0,
+    "date_created": "2024-01-01T00:00:00.000Z",
+    "dockerfile": "",
+    "repo_name": "your-username/your-repo"
+  }
+}</code></pre>
+        
+        <div class="mt-3">
+            <button class="btn btn-sm btn-outline-primary" onclick="copyPayloadExample()">
+                <i class="bi bi-clipboard me-1"></i>
+                Copy Example
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Troubleshooting -->
+<div class="card">
+    <div class="card-header bg-transparent">
+        <h5 class="card-title mb-0">
+            <i class="bi bi-question-circle me-2"></i>
+            Troubleshooting
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="accordion" id="troubleshootingAccordion">
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#trouble1">
+                        Webhook not triggering scans
+                    </button>
+                </h2>
+                <div id="trouble1" class="accordion-collapse collapse" data-bs-parent="#troubleshootingAccordion">
+                    <div class="accordion-body">
+                        <ul class="mb-0">
+                            <li>Verify the webhook URL is correct and accessible</li>
+                            <li>Check that the webhook is configured for "Repository push" events</li>
+                            <li>Ensure your backend service is running and reachable</li>
+                            <li>Check the scan queue for pending items</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#trouble2">
+                        Scans failing or timing out
+                    </button>
+                </h2>
+                <div id="trouble2" class="accordion-collapse collapse" data-bs-parent="#troubleshootingAccordion">
+                    <div class="accordion-body">
+                        <ul class="mb-0">
+                            <li>Check if Trivy is properly installed and updated</li>
+                            <li>Verify network connectivity for CVE database access</li>
+                            <li>Monitor system resources (CPU, memory, disk space)</li>
+                            <li>Review scan timeout settings in configuration</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#trouble3">
+                        No notifications received
+                    </button>
+                </h2>
+                <div id="trouble3" class="accordion-collapse collapse" data-bs-parent="#troubleshootingAccordion">
+                    <div class="accordion-body">
+                        <ul class="mb-0">
+                            <li>Verify Slack webhook URL is correctly configured</li>
+                            <li>Test Slack integration with a manual scan</li>
+                            <li>Check Slack app permissions and channel settings</li>
+                            <li>Review application logs for notification errors</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast for notifications -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1050;">
+    <div class="toast align-items-center text-white bg-success border-0" id="successToast" role="alert">
+        <div class="d-flex">
+            <div class="toast-body">
+                <i class="bi bi-check-circle me-2"></i>
+                <span id="successMessage">Action completed</span>
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+
+<script>
+function copyWebhookUrl() {
+    const urlInput = document.getElementById('webhookUrl');
+    urlInput.select();
+    urlInput.setSelectionRange(0, 99999); // For mobile devices
+    
+    navigator.clipboard.writeText(urlInput.value).then(() => {
+        showSuccessToast('Webhook URL copied to clipboard!');
+    }).catch(() => {
+        // Fallback for older browsers
+        document.execCommand('copy');
+        showSuccessToast('Webhook URL copied to clipboard!');
+    });
+}
+
+function togglePayloadExample() {
+    const example = document.getElementById('payloadExample');
+    const icon = document.getElementById('payloadToggleIcon');
+    const text = document.getElementById('payloadToggleText');
+    
+    if (example.classList.contains('d-none')) {
+        example.classList.remove('d-none');
+        icon.className = 'bi bi-eye-slash';
+        text.textContent = 'Hide';
+    } else {
+        example.classList.add('d-none');
+        icon.className = 'bi bi-eye';
+        text.textContent = 'Show';
+    }
+}
+
+function copyPayloadExample() {
+    const payload = document.getElementById('examplePayload').textContent;
+    navigator.clipboard.writeText(payload).then(() => {
+        showSuccessToast('Example payload copied to clipboard!');
+    });
+}
+
+async function testWebhook() {
+    try {
+        // Send a test webhook payload
+        const testPayload = {
+            push_data: {
+                pushed_at: new Date().toISOString(),
+                tag: "test",
+                pusher: "test-user"
+            },
+            repository: {
+                repo_name: "test-user/test-repo",
+                name: "test-repo",
+                namespace: "test-user"
+            }
+        };
+        
+        const response = await fetch('/webhook/dockerhub', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(testPayload)
+        });
+        
+        if (response.ok) {
+            showSuccessToast('Test webhook sent successfully!');
+            setTimeout(refreshActivity, 1000);
+        } else {
+            throw new Error('Webhook test failed');
+        }
+    } catch (error) {
+        showErrorToast('Webhook test failed: ' + error.message);
+    }
+}
+
+async function refreshActivity() {
+    try {
+        // This would fetch recent webhook activity
+        // For now, just show a loading state
+        const activityDiv = document.getElementById('webhookActivity');
+        activityDiv.innerHTML = `
+            <div class="text-center text-muted py-3">
+                <div class="spinner-border spinner-border-sm me-2"></div>
+                Checking for recent activity...
+            </div>
+        `;
+        
+        // Simulate API call delay
+        setTimeout(() => {
+            activityDiv.innerHTML = `
+                <div class="text-center text-muted py-3">
+                    <i class="bi bi-hourglass-split fs-3 mb-2"></i>
+                    <p class="mb-0">No webhook activity yet</p>
+                    <small>Push an image to see webhook events here</small>
+                </div>
+            `;
+        }, 1000);
+        
+    } catch (error) {
+        console.error('Failed to refresh activity:', error);
+    }
+}
+
+function showSuccessToast(message) {
+    const toast = document.getElementById('successToast');
+    const messageEl = document.getElementById('successMessage');
+    messageEl.textContent = message;
+    
+    const bsToast = new bootstrap.Toast(toast);
+    bsToast.show();
+}
+
+function showErrorToast(message) {
+    // Create error toast dynamically
+    const toastHtml = `
+        <div class="toast align-items-center text-white bg-danger border-0" role="alert">
+            <div class="d-flex">
+                <div class="toast-body">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    ${message}
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>
+        </div>
+    `;
+    
+    const toastContainer = document.querySelector('.position-fixed.bottom-0.end-0');
+    toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+    
+    const newToast = toastContainer.lastElementChild;
+    const bsToast = new bootstrap.Toast(newToast);
+    bsToast.show();
+    
+    // Remove toast element after it's hidden
+    newToast.addEventListener('hidden.bs.toast', () => {
+        newToast.remove();
+    });
+}
+
+// Initialize page
+document.addEventListener('DOMContentLoaded', function() {
+    // Add some visual enhancements
+    const stepNumbers = document.querySelectorAll('.step-number');
+    stepNumbers.forEach((num, index) => {
+        setTimeout(() => {
+            num.style.animation = 'pulse 0.5s ease-in-out';
+        }, index * 100);
+    });
+});
+</script>
+
+<style>
+.setup-steps {
+    position: relative;
+}
+
+.setup-steps::before {
+    content: '';
+    position: absolute;
+    left: 20px;
+    top: 40px;
+    bottom: 40px;
+    width: 2px;
+    background: linear-gradient(to bottom, #667eea, #764ba2);
+    z-index: 1;
+}
+
+.step-item {
+    position: relative;
+    display: flex;
+    margin-bottom: 2rem;
+    z-index: 2;
+}
+
+.step-number {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    margin-right: 1rem;
+    flex-shrink: 0;
+    box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+}
+
+.step-content {
+    flex: 1;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 1rem;
+    border-radius: 8px;
+    border-left: 3px solid #667eea;
+}
+
+.step-content h6 {
+    color: #667eea;
+    margin-bottom: 0.5rem;
+}
+
+.configuration-item .d-flex {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #eee;
+}
+
+.configuration-item .d-flex:last-child {
+    border-bottom: none;
+}
+
+pre {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.accordion-button:not(.collapsed) {
+    background-color: rgba(102, 126, 234, 0.1);
+    border-color: #667eea;
+}
+
+.accordion-button:focus {
+    box-shadow: 0 0 0 0.25rem rgba(102, 126, 234, 0.25);
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+
+@media (max-width: 768px) {
+    .setup-steps::before {
+        display: none;
+    }
+    
+    .step-item {
+        flex-direction: column;
+        text-align: center;
+    }
+    
+    .step-number {
+        margin: 0 auto 1rem auto;
+    }
+    
+    .step-content {
+        margin-left: 0;
+    }
+}
+</style>
+{% endblock %}

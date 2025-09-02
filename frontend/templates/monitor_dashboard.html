@@ -1,0 +1,673 @@
+{% extends "base.html" %}
+
+{% block title %}Auto-Monitoring Dashboard - Container Vulnerability Scanner{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ url_for('index') }}" class="text-white">Dashboard</a></li>
+                <li class="breadcrumb-item active text-white-50">Auto-Monitoring</li>
+            </ol>
+        </nav>
+        <h1 class="h2 text-white mb-1">
+            <i class="bi bi-robot me-2"></i>
+            Automated Monitoring System
+        </h1>
+        <p class="text-white-50 mb-0">Monitor Docker Hub repositories for new pushes and auto-scan vulnerabilities</p>
+    </div>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-light" onclick="refreshDashboard()">
+            <i class="bi bi-arrow-clockwise me-1"></i>
+            Refresh
+        </button>
+        <button class="btn btn-warning" onclick="triggerManualScan()" id="triggerBtn">
+            <i class="bi bi-play-fill me-1"></i>
+            Trigger Scan
+        </button>
+    </div>
+</div>
+
+<!-- System Status Cards -->
+<div class="row mb-4">
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card stat-card {% if monitoring_status.auto_scan_enabled %}gradient-card{% else %}bg-secondary{% endif %}">
+            <div class="card-body text-center text-white">
+                <i class="bi bi-{{ 'robot' if monitoring_status.auto_scan_enabled else 'pause-circle' }} fs-1 mb-3"></i>
+                <h5 class="mb-1">{{ 'ENABLED' if monitoring_status.auto_scan_enabled else 'DISABLED' }}</h5>
+                <p class="mb-0">Auto-Scanning</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card stat-card severity-low">
+            <div class="card-body text-center text-white">
+                <i class="bi bi-clock fs-1 mb-3"></i>
+                <h3 class="mb-1">{{ monitoring_status.monitor_interval_minutes or 0 }}</h3>
+                <p class="mb-0">Minutes Interval</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card stat-card severity-medium">
+            <div class="card-body text-center text-white">
+                <i class="bi bi-boxes fs-1 mb-3"></i>
+                <h3 class="mb-1">{{ monitoring_status.monitored_repos_count or 0 }}</h3>
+                <p class="mb-0">Monitored Repos</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card stat-card severity-high">
+            <div class="card-body text-center text-white">
+                <i class="bi bi-list-check fs-1 mb-3"></i>
+                <h3 class="mb-1">{{ monitoring_status.queue_stats.queued or 0 }}</h3>
+                <p class="mb-0">Queued Scans</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Monitoring Configuration -->
+<div class="row mb-4">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header bg-transparent">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-gear me-2"></i>
+                        Monitoring Configuration
+                    </h5>
+                    <a href="{{ url_for('manage_monitored_repositories') }}" class="btn btn-outline-primary btn-sm">
+                        <i class="bi bi-sliders me-1"></i>
+                        Manage Repositories
+                    </a>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-3">System Settings</h6>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span>Auto-scan enabled:</span>
+                            <span class="badge bg-{{ 'success' if monitoring_status.auto_scan_enabled else 'secondary' }}">
+                                {{ 'Yes' if monitoring_status.auto_scan_enabled else 'No' }}
+                            </span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span>Monitor interval:</span>
+                            <span class="badge bg-info">{{ monitoring_status.monitor_interval_minutes }} min</span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span>Max concurrent scans:</span>
+                            <span class="badge bg-warning">{{ monitoring_status.max_concurrent }}</span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span>Currently running:</span>
+                            <span class="badge bg-primary">{{ monitoring_status.running_scans }}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-3">Last Activity</h6>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span>Last monitor run:</span>
+                            <small class="text-muted">{{ monitoring_status.last_monitor_run | time_ago if monitoring_status.last_monitor_run else 'Never' }}</small>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span>Monitored repositories:</span>
+                            <span class="text-muted">{{ monitoring_status.monitored_repositories if monitoring_status.monitored_repositories != 'all' else 'All user repos' }}</span>
+                        </div>
+                        
+                        <!-- Quick actions -->
+                        <div class="mt-3">
+                            <div class="btn-group btn-group-sm w-100">
+                                <button class="btn btn-outline-primary" onclick="viewQueue()">
+                                    <i class="bi bi-list-ul me-1"></i>
+                                    View Queue
+                                </button>
+                                <button class="btn btn-outline-secondary" onclick="viewWebhookSetup()">
+                                    <i class="bi bi-webhook me-1"></i>
+                                    Webhook Setup
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header bg-transparent">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-activity me-2"></i>
+                    Queue Status
+                </h5>
+            </div>
+            <div class="card-body">
+                {% set queue_stats = monitoring_status.queue_stats %}
+                <div class="row g-2 mb-3">
+                    <div class="col-6">
+                        <div class="text-center p-2 rounded bg-warning bg-opacity-10">
+                            <div class="h4 mb-0 text-warning">{{ queue_stats.queued or 0 }}</div>
+                            <small class="text-muted">Queued</small>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="text-center p-2 rounded bg-primary bg-opacity-10">
+                            <div class="h4 mb-0 text-primary">{{ queue_stats.processing or 0 }}</div>
+                            <small class="text-muted">Processing</small>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="text-center p-2 rounded bg-success bg-opacity-10">
+                            <div class="h4 mb-0 text-success">{{ queue_stats.completed_today or 0 }}</div>
+                            <small class="text-muted">Completed Today</small>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="text-center p-2 rounded bg-danger bg-opacity-10">
+                            <div class="h4 mb-0 text-danger">{{ queue_stats.failed_today or 0 }}</div>
+                            <small class="text-muted">Failed Today</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="d-grid">
+                    <a href="{{ url_for('queue_dashboard') }}" class="btn btn-outline-primary">
+                        <i class="bi bi-eye me-1"></i>
+                        View Full Queue
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Monitored Repositories -->
+<div class="card mb-4">
+    <div class="card-header bg-transparent">
+        <div class="d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">
+                <i class="bi bi-boxes me-2"></i>
+                Monitored Repositories ({{ monitored_repos.monitored_count or 0 }})
+            </h5>
+            <div class="d-flex gap-2">
+                <div class="btn-group btn-group-sm">
+                    <input type="radio" class="btn-check" name="repoFilter" id="filterAllRepos" autocomplete="off" checked>
+                    <label class="btn btn-outline-primary" for="filterAllRepos">All</label>
+                    
+                    <input type="radio" class="btn-check" name="repoFilter" id="filterMonitored" autocomplete="off">
+                    <label class="btn btn-outline-primary" for="filterMonitored">Monitored</label>
+                    
+                    <input type="radio" class="btn-check" name="repoFilter" id="filterNotMonitored" autocomplete="off">
+                    <label class="btn btn-outline-primary" for="filterNotMonitored">Not Monitored</label>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        {% if monitored_repos.repositories %}
+        <div style="max-height: 400px; overflow-y: auto;">
+            <table class="table table-hover mb-0">
+                <thead class="bg-light sticky-top">
+                    <tr>
+                        <th><i class="bi bi-box me-1"></i>Repository</th>
+                        <th><i class="bi bi-eye me-1"></i>Status</th>
+                        <th><i class="bi bi-clock me-1"></i>Last Scan</th>
+                        <th><i class="bi bi-download me-1"></i>Pulls</th>
+                        <th><i class="bi bi-star me-1"></i>Stars</th>
+                        <th><i class="bi bi-gear me-1"></i>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for repo in monitored_repos.repositories[:20] %}
+                    <tr class="repo-row" data-monitored="{{ repo.monitored | lower }}">
+                        <td>
+                            <div class="d-flex align-items-center">
+                                {% if repo.is_private %}
+                                    <i class="bi bi-lock text-warning me-2"></i>
+                                {% else %}
+                                    <i class="bi bi-box text-primary me-2"></i>
+                                {% endif %}
+                                <div>
+                                    <div class="fw-semibold">{{ repo.full_name }}</div>
+                                    {% if repo.description %}
+                                        <small class="text-muted">{{ repo.description[:50] }}{% if repo.description|length > 50 %}...{% endif %}</small>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            {% if repo.monitored %}
+                                <span class="badge bg-success">
+                                    <i class="bi bi-eye-fill me-1"></i>Monitored
+                                </span>
+                            {% else %}
+                                <span class="badge bg-secondary">
+                                    <i class="bi bi-eye-slash me-1"></i>Not Monitored
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small class="text-muted">{{ repo.last_scan | time_ago if repo.last_scan else 'Never' }}</small>
+                        </td>
+                        <td>
+                            <small class="text-muted">{{ "{:,}".format(repo.pull_count or 0) }}</small>
+                        </td>
+                        <td>
+                            <small class="text-muted">{{ repo.star_count or 0 }}</small>
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                {% if repo.monitored %}
+                                    <button class="btn btn-outline-primary" onclick="triggerRepoScan('{{ repo.full_name }}')">
+                                        <i class="bi bi-play-fill"></i>
+                                    </button>
+                                    <button class="btn btn-outline-secondary" onclick="stopMonitoring('{{ repo.full_name }}')">
+                                        <i class="bi bi-eye-slash"></i>
+                                    </button>
+                                {% else %}
+                                    <button class="btn btn-outline-success" onclick="startMonitoring('{{ repo.full_name }}')">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        {% if monitored_repos.repositories | length > 20 %}
+        <div class="card-footer bg-light text-center">
+            <small class="text-muted">Showing first 20 repositories.</small>
+            <a href="{{ url_for('manage_monitored_repositories') }}" class="btn btn-sm btn-outline-primary ms-2">
+                View All {{ monitored_repos.total_count }} Repositories
+            </a>
+        </div>
+        {% endif %}
+        
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-boxes fs-1 mb-3"></i>
+            <h4>No repositories found</h4>
+            <p class="mb-4">Connect to Docker Hub to start monitoring your repositories</p>
+            <a href="{{ url_for('webhook_setup') }}" class="btn btn-outline-primary">
+                <i class="bi bi-gear me-1"></i>
+                Setup Configuration
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Recent Auto-Scans -->
+<div class="card">
+    <div class="card-header bg-transparent">
+        <div class="d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">
+                <i class="bi bi-robot me-2"></i>
+                Recent Automated Scans
+            </h5>
+            <a href="{{ url_for('reports_list', type='auto') }}" class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-arrow-right me-1"></i>
+                View All Auto-Scans
+            </a>
+        </div>
+    </div>
+    <div class="card-body p-0" id="recentScansContainer">
+        <div class="text-center py-4">
+            <div class="spinner-border spinner-border-sm text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2 mb-0 text-muted">Loading recent scans...</p>
+        </div>
+    </div>
+</div>
+
+<!-- Real-time Updates -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1050;">
+    <div class="toast align-items-center text-white bg-primary border-0" id="updateToast" role="alert">
+        <div class="d-flex">
+            <div class="toast-body">
+                <i class="bi bi-info-circle me-2"></i>
+                <span id="updateMessage">System status updated</span>
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+
+<script>
+let autoRefreshInterval;
+let lastUpdateTime = new Date();
+
+// Initialize dashboard
+document.addEventListener('DOMContentLoaded', function() {
+    loadRecentScans();
+    startAutoRefresh();
+    
+    // Repository filter event listeners
+    document.getElementById('filterAllRepos').addEventListener('change', () => filterRepositories('all'));
+    document.getElementById('filterMonitored').addEventListener('change', () => filterRepositories('true'));
+    document.getElementById('filterNotMonitored').addEventListener('change', () => filterRepositories('false'));
+});
+
+// Auto-refresh functionality
+function startAutoRefresh() {
+    autoRefreshInterval = setInterval(async function() {
+        try {
+            await updateDashboardData();
+        } catch (error) {
+            console.error('Auto-refresh error:', error);
+        }
+    }, 30000); // Update every 30 seconds
+}
+
+async function updateDashboardData() {
+    try {
+        const [monitoringStatus, queueStatus] = await Promise.all([
+            fetch('/api/monitoring/status').then(r => r.json()),
+            fetch('/api/queue/status').then(r => r.json())
+        ]);
+        
+        updateStatusCards(monitoringStatus);
+        updateQueueCards(queueStatus);
+        loadRecentScans();
+        
+        showToast('Dashboard updated', 'success');
+        lastUpdateTime = new Date();
+        
+    } catch (error) {
+        console.error('Failed to update dashboard:', error);
+        showToast('Failed to update dashboard', 'error');
+    }
+}
+
+function updateStatusCards(status) {
+    // Update queue stats
+    const queueStats = status.queue_stats || {};
+    document.querySelectorAll('[data-queue-stat]').forEach(el => {
+        const stat = el.getAttribute('data-queue-stat');
+        if (queueStats[stat] !== undefined) {
+            el.textContent = queueStats[stat];
+        }
+    });
+    
+    // Update other status indicators
+    if (status.running_scans !== undefined) {
+        document.querySelector('[data-running-scans]').textContent = status.running_scans;
+    }
+}
+
+function updateQueueCards(queueData) {
+    const summary = queueData.summary || {};
+    
+    // Update queue status cards
+    const statusMapping = {
+        'queued': 'warning',
+        'processing': 'primary', 
+        'completed_today': 'success',
+        'failed_today': 'danger'
+    };
+    
+    Object.keys(statusMapping).forEach(status => {
+        const element = document.querySelector(`[data-queue-${status}]`);
+        if (element && summary[status] !== undefined) {
+            element.textContent = summary[status];
+        }
+    });
+}
+
+async function loadRecentScans() {
+    try {
+        const response = await fetch('/reports?type=auto&limit=10');
+        const reports = await response.json();
+        
+        const container = document.getElementById('recentScansContainer');
+        
+        if (reports && reports.length > 0) {
+            container.innerHTML = `
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="bg-light">
+                            <tr>
+                                <th><i class="bi bi-robot me-1"></i>Image</th>
+                                <th><i class="bi bi-shield-check me-1"></i>Risk</th>
+                                <th><i class="bi bi-bug me-1"></i>Issues</th>
+                                <th><i class="bi bi-clock me-1"></i>Scanned</th>
+                                <th><i class="bi bi-gear me-1"></i>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${reports.slice(0, 5).map(report => `
+                                <tr>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <i class="bi bi-robot text-primary me-2"></i>
+                                            <div>
+                                                <div class="fw-semibold">${report.image}</div>
+                                                ${report.auto_triggered ? '<small class="text-success"><i class="bi bi-check-circle me-1"></i>Auto-triggered</small>' : ''}
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-${getRiskBadgeClass(report.summary)}">${getRiskLevel(report.summary)}</span>
+                                    </td>
+                                    <td>
+                                        <div class="d-flex gap-1">
+                                            ${report.summary.CRITICAL ? `<span class="badge bg-danger">${report.summary.CRITICAL}C</span>` : ''}
+                                            ${report.summary.HIGH ? `<span class="badge bg-warning">${report.summary.HIGH}H</span>` : ''}
+                                            ${report.summary.MEDIUM ? `<span class="badge bg-info">${report.summary.MEDIUM}M</span>` : ''}
+                                            ${report.summary.LOW ? `<span class="badge bg-success">${report.summary.LOW}L</span>` : ''}
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">${formatTimeAgo(report.created_at)}</small>
+                                    </td>
+                                    <td>
+                                        <a href="/report/${report.id}" class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-eye"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        } else {
+            container.innerHTML = `
+                <div class="text-center py-5 text-muted">
+                    <i class="bi bi-robot fs-1 mb-3"></i>
+                    <h5>No automated scans yet</h5>
+                    <p class="mb-0">Enable auto-monitoring to see automated scans here</p>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Failed to load recent scans:', error);
+        document.getElementById('recentScansContainer').innerHTML = `
+            <div class="text-center py-4 text-danger">
+                <i class="bi bi-exclamation-triangle fs-1 mb-3"></i>
+                <p class="mb-0">Failed to load recent scans</p>
+            </div>
+        `;
+    }
+}
+
+// Helper functions
+function getRiskLevel(summary) {
+    if (!summary) return 'UNKNOWN';
+    const score = (summary.CRITICAL || 0) * 4 + (summary.HIGH || 0) * 3 + 
+                  (summary.MEDIUM || 0) * 2 + (summary.LOW || 0) * 1;
+    
+    if (score > 100) return 'CRITICAL';
+    if (score > 50) return 'HIGH';
+    if (score > 20) return 'MEDIUM';
+    return 'LOW';
+}
+
+function getRiskBadgeClass(summary) {
+    const level = getRiskLevel(summary);
+    const mapping = {
+        'CRITICAL': 'danger',
+        'HIGH': 'warning',
+        'MEDIUM': 'info',
+        'LOW': 'success',
+        'UNKNOWN': 'secondary'
+    };
+    return mapping[level];
+}
+
+function formatTimeAgo(dateString) {
+    const now = new Date();
+    const date = new Date(dateString);
+    const diffInMinutes = Math.floor((now - date) / (1000 * 60));
+    
+    if (diffInMinutes < 1) return 'Just now';
+    if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+    if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h ago`;
+    return `${Math.floor(diffInMinutes / 1440)}d ago`;
+}
+
+// Action functions
+async function triggerManualScan() {
+    const btn = document.getElementById('triggerBtn');
+    const originalContent = btn.innerHTML;
+    
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Triggering...';
+    
+    try {
+        const response = await fetch('/monitoring/trigger', { method: 'POST' });
+        const result = await response.json();
+        
+        if (response.ok) {
+            showToast('Manual monitoring cycle triggered', 'success');
+            setTimeout(updateDashboardData, 2000); // Refresh after 2 seconds
+        } else {
+            showToast('Failed to trigger monitoring: ' + (result.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        showToast('Network error: ' + error.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalContent;
+    }
+}
+
+function filterRepositories(filter) {
+    const rows = document.querySelectorAll('.repo-row');
+    rows.forEach(row => {
+        const monitored = row.getAttribute('data-monitored');
+        if (filter === 'all' || monitored === filter) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+
+function viewQueue() {
+    window.location.href = '/queue';
+}
+
+function viewWebhookSetup() {
+    window.location.href = '/webhook/setup';
+}
+
+function refreshDashboard() {
+    updateDashboardData();
+}
+
+function showToast(message, type = 'info') {
+    const toastElement = document.getElementById('updateToast');
+    const messageElement = document.getElementById('updateMessage');
+    
+    // Update message
+    messageElement.textContent = message;
+    
+    // Update toast class based on type
+    toastElement.className = `toast align-items-center text-white border-0 bg-${type === 'error' ? 'danger' : type === 'success' ? 'success' : 'primary'}`;
+    
+    // Show toast
+    const toast = new bootstrap.Toast(toastElement);
+    toast.show();
+}
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', function() {
+    if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+    }
+});
+</script>
+
+<style>
+.stat-card {
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+    animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+
+.repo-row {
+    transition: background-color 0.2s ease;
+}
+
+.repo-row:hover {
+    background-color: rgba(102, 126, 234, 0.05);
+}
+
+.table-responsive {
+    border-radius: 0.375rem;
+}
+
+.toast {
+    backdrop-filter: blur(10px);
+}
+
+.spinner-border-sm {
+    width: 1rem;
+    height: 1rem;
+}
+
+@media (max-width: 768px) {
+    .stat-card {
+        margin-bottom: 1rem;
+    }
+    
+    .btn-group {
+        flex-direction: column;
+    }
+    
+    .table-responsive {
+        font-size: 0.875rem;
+    }
+}
+</style>
+{% endblock %}

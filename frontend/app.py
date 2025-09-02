@@ -55,32 +55,12 @@ def index():
                 else:
                     flash(f"Scan completed for {image}! Report ID: {scan_result.get('report_id', 'N/A')}", "success")
         
-        elif scan_type == "registry":
-            repositories = request.form.getlist("repositories")
-            max_images = int(request.form.get("max_images", 20))
-            
-            if repositories:
-                registry_data = {
-                    "repositories": repositories,
-                    "max_images": max_images
-                }
-                scan_result = post_backend_data("registry/scan", data=registry_data)
-                
-                if "error" in scan_result:
-                    flash(f"Registry scan failed: {scan_result['error']}", "error")
-                else:
-                    flash(f"Registry scan completed! Scanned {scan_result.get('total_scanned', 0)} images from {len(repositories)} repositories.", "success")
-            else:
-                flash("Please select at least one repository to scan", "warning")
-        
         return redirect(url_for("index"))
 
     # Fetch dashboard data
     stats = get_backend_data("stats", {"total_scans": 0, "recent_scans_7d": 0, "vulnerability_totals": {}})
     reports = get_backend_data("reports", [])
-    
-    # Fetch registry repositories for the registry scan form
-    registry_data = get_backend_data("registry/repositories", {"repositories": []})
+    monitoring_status = get_backend_data("monitoring/status", {})
     
     # Process reports for dashboard
     recent_reports = reports[:5] if reports else []
@@ -89,69 +69,100 @@ def index():
                          stats=stats, 
                          reports=recent_reports,
                          all_reports_count=len(reports),
-                         registry_repositories=registry_data.get("repositories", []))
+                         monitoring_status=monitoring_status)
 
-@app.route("/registry")
-def registry_dashboard():
-    """Registry management dashboard."""
-    registry_data = get_backend_data("registry/repositories", {"repositories": []})
-    stats = get_backend_data("stats", {})
+@app.route("/monitoring")
+def monitoring_dashboard():
+    """Automated monitoring dashboard."""
+    monitoring_status = get_backend_data("monitoring/status", {})
+    monitored_repos = get_backend_data("monitoring/repositories", {"repositories": []})
+    queue_status = get_backend_data("queue/status", {"items": [], "summary": {}})
     
-    return render_template("registry_dashboard.html",
-                         registry_data=registry_data,
-                         stats=stats)
+    return render_template("monitoring_dashboard.html",
+                         monitoring_status=monitoring_status,
+                         monitored_repos=monitored_repos,
+                         queue_status=queue_status)
 
-@app.route("/registry/repositories/<path:repository>/tags")
-def repository_tags(repository):
-    """View tags for a specific repository."""
-    limit = request.args.get("limit", 50)
-    tags_data = get_backend_data(f"registry/repositories/{repository}/tags?limit={limit}")
+@app.route("/monitoring/repositories", methods=["GET", "POST"])
+def manage_monitored_repositories():
+    """Manage monitored repositories."""
+    if request.method == "POST":
+        selected_repos = request.form.getlist("repositories")
+        
+        if selected_repos:
+            result = post_backend_data("monitoring/repositories", data={"repositories": selected_repos})
+            if "error" not in result:
+                flash(f"Updated monitoring for {len(selected_repos)} repositories", "success")
+            else:
+                flash(f"Error updating repositories: {result['error']}", "error")
+        else:
+            flash("No repositories selected", "warning")
+        
+        return redirect(url_for("manage_monitored_repositories"))
     
-    return render_template("repository_tags.html",
-                         repository=repository,
-                         tags_data=tags_data)
+    # GET request
+    monitored_repos = get_backend_data("monitoring/repositories", {"repositories": []})
+    return render_template("manage_repositories.html", monitored_repos=monitored_repos)
 
-@app.route("/registry/scan", methods=["POST"])
-def registry_scan():
-    """Handle AJAX registry scan requests."""
-    data = request.get_json()
-    repositories = data.get("repositories", [])
-    max_images = int(data.get("max_images", 20))
+@app.route("/monitoring/trigger", methods=["POST"])
+def trigger_monitoring():
+    """Manually trigger monitoring cycle."""
+    result = post_backend_data("monitoring/trigger")
     
-    if not repositories:
-        return jsonify({"error": "No repositories selected"}), 400
+    if "error" not in result:
+        flash("Monitoring cycle triggered successfully", "success")
+    else:
+        flash(f"Error triggering monitoring: {result['error']}", "error")
     
-    registry_data = {
-        "repositories": repositories,
-        "max_images": max_images
-    }
-    scan_result = post_backend_data("registry/scan", data=registry_data)
-    return jsonify(scan_result)
+    return redirect(url_for("monitoring_dashboard"))
 
-@app.route("/registry/scan/<scan_id>")
-def registry_scan_results(scan_id):
-    """View registry scan results."""
-    scan_data = get_backend_data(f"registry/scan/{scan_id}")
+@app.route("/queue")
+def queue_dashboard():
+    """Scan queue dashboard."""
+    page = int(request.args.get("page", 1))
+    status_filter = request.args.get("status")
     
-    if "error" in scan_data:
-        flash(f"Registry scan not found: {scan_data['error']}", "error")
-        return redirect(url_for("registry_dashboard"))
+    endpoint = f"queue/status?page={page}&limit=20"
+    if status_filter:
+        endpoint += f"&status={status_filter}"
     
-    return render_template("registry_scan_results.html", scan_data=scan_data)
+    queue_data = get_backend_data(endpoint, {"items": [], "pagination": {}, "summary": {}})
+    
+    return render_template("queue_dashboard.html", 
+                         queue_data=queue_data,
+                         status_filter=status_filter,
+                         page=page)
 
-@app.route("/scan", methods=["POST"])
-def scan():
-    """Handle AJAX scan requests"""
-    data = request.get_json()
-    image = data.get("image") if data else request.form.get("image")
-    enrich_cve = data.get("enrich_cve", True) if data else request.form.get("enrich_cve") == "on"
+@app.route("/queue/clear", methods=["POST"])
+def clear_queue():
+    """Clear completed/failed items from queue."""
+    data = request.get_json() or {}
+    statuses = data.get("statuses", ["completed", "failed"])
     
-    if not image:
-        return jsonify({"error": "Image name is required"}), 400
+    result = post_backend_data("queue/clear", data={"statuses": statuses})
     
-    scan_result = post_backend_data("scan", params={"image": image, "enrich_cve": str(enrich_cve).lower()})
-    return jsonify(scan_result)
+    return jsonify(result)
 
+@app.route("/api/monitoring/status")
+def api_monitoring_status():
+    """API endpoint for monitoring status."""
+    return jsonify(get_backend_data("monitoring/status"))
+
+@app.route("/api/queue/status")
+def api_queue_status():
+    """API endpoint for queue status."""
+    return jsonify(get_backend_data("queue/status"))
+
+@app.route("/webhook/setup")
+def webhook_setup():
+    """Webhook setup instructions."""
+    backend_info = get_backend_data("", {})
+    
+    return render_template("webhook_setup.html", 
+                         backend_url=BACKEND_URL,
+                         backend_info=backend_info)
+
+# Keep existing routes
 @app.route("/reports")
 def reports_list():
     """Display all reports with filtering and pagination"""
@@ -192,16 +203,18 @@ def report(report_id):
     
     return render_template("report_detail.html", report=processed_report)
 
-@app.route("/cve/<cve_id>")
-def cve_detail(cve_id):
-    """Display CVE details"""
-    cve_data = get_backend_data(f"cve/{cve_id}")
+@app.route("/scan", methods=["POST"])
+def scan():
+    """Handle AJAX scan requests"""
+    data = request.get_json()
+    image = data.get("image") if data else request.form.get("image")
+    enrich_cve = data.get("enrich_cve", True) if data else request.form.get("enrich_cve") == "on"
     
-    if "error" in cve_data:
-        flash(f"CVE not found: {cve_id}", "error")
-        return redirect(url_for("index"))
+    if not image:
+        return jsonify({"error": "Image name is required"}), 400
     
-    return render_template("cve_detail.html", cve=cve_data, cve_id=cve_id)
+    scan_result = post_backend_data("scan", params={"image": image, "enrich_cve": str(enrich_cve).lower()})
+    return jsonify(scan_result)
 
 @app.route("/api/scan/status/<report_id>")
 def scan_status(report_id):
@@ -222,11 +235,6 @@ def scan_status(report_id):
 def api_stats():
     """API endpoint for dashboard stats"""
     return jsonify(get_backend_data("stats"))
-
-@app.route("/api/registry/repositories")
-def api_registry_repositories():
-    """API endpoint for registry repositories"""
-    return jsonify(get_backend_data("registry/repositories"))
 
 @app.route('/favicon.ico')
 def favicon():
@@ -307,6 +315,34 @@ def severity_badge_filter(severity):
         "UNKNOWN": "secondary"
     }
     return severity_map.get(severity, "secondary")
+
+@app.template_filter('time_ago')
+def time_ago_filter(value):
+    """Convert datetime to human-readable time ago format"""
+    if not value:
+        return "Never"
+    
+    try:
+        if isinstance(value, str):
+            dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        else:
+            dt = value
+        
+        now = datetime.utcnow().replace(tzinfo=dt.tzinfo)
+        diff = now - dt
+        
+        if diff.days > 0:
+            return f"{diff.days} day{'s' if diff.days != 1 else ''} ago"
+        elif diff.seconds > 3600:
+            hours = diff.seconds // 3600
+            return f"{hours} hour{'s' if hours != 1 else ''} ago"
+        elif diff.seconds > 60:
+            minutes = diff.seconds // 60
+            return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+        else:
+            return "Just now"
+    except:
+        return str(value)
 
 @app.errorhandler(404)
 def not_found_error(error):
