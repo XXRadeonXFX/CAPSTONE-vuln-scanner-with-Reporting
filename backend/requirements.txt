@@ -4,4 +4,3 @@ pymongo
 requests
 aiohttp
 psycopg2-binary
-schedule
