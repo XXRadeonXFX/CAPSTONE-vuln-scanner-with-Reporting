@@ -234,6 +234,12 @@ def favicon():
     from flask import Response
     return Response(status=204)
 
+@app.route("/monitor")
+def monitoring_dashboard():
+    """Auto-scan monitoring dashboard."""
+    return render_template("monitoring_dashboard.html")
+
+
 def process_report_data(report_data):
     """Process report data for better frontend display"""
     processed = report_data.copy()

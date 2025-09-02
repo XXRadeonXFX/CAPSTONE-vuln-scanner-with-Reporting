@@ -1,0 +1,561 @@
+{% extends "base.html" %}
+
+{% block title %}Auto-Scan Monitor - Container Vulnerability Scanner{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ url_for('index') }}" class="text-white">Dashboard</a></li>
+                <li class="breadcrumb-item active text-white-50">Auto-Scan Monitor</li>
+            </ol>
+        </nav>
+        <h1 class="h2 text-white mb-1">
+            <i class="bi bi-robot me-2"></i>
+            Automated Registry Monitoring
+        </h1>
+        <p class="text-white-50 mb-0">Automatically scan newly pushed images from your registries</p>
+    </div>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-light" onclick="refreshMonitoringData()" id="refreshBtn">
+            <i class="bi bi-arrow-clockwise me-1"></i>
+            Refresh
+        </button>
+        <button class="btn btn-warning" onclick="triggerManualCheck()" id="manualTriggerBtn">
+            <i class="bi bi-play-circle me-1"></i>
+            Check Now
+        </button>
+    </div>
+</div>
+
+<!-- Monitoring Status Cards -->
+<div class="row mb-4" id="statusCards">
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card stat-card">
+            <div class="card-body text-center">
+                <div id="monitoringStatus">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card stat-card severity-high">
+            <div class="card-body text-center text-white">
+                <i class="bi bi-clock fs-1 mb-3"></i>
+                <h3 class="mb-1" id="queuedCount">-</h3>
+                <p class="mb-0">Queued Scans</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card stat-card gradient-card">
+            <div class="card-body text-center text-white">
+                <i class="bi bi-check-circle fs-1 mb-3"></i>
+                <h3 class="mb-1" id="completedCount">-</h3>
+                <p class="mb-0">Completed</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card stat-card severity-critical">
+            <div class="card-body text-center text-white">
+                <i class="bi bi-x-circle fs-1 mb-3"></i>
+                <h3 class="mb-1" id="failedCount">-</h3>
+                <p class="mb-0">Failed</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Configuration and Activity Row -->
+<div class="row mb-4">
+    <!-- Configuration Panel -->
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header bg-transparent">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-gear me-2"></i>
+                    Monitoring Configuration
+                </h5>
+            </div>
+            <div class="card-body" id="configPanel">
+                <div class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading configuration...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Real-time Activity Feed -->
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header bg-transparent">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-activity me-2"></i>
+                        Recent Activity
+                    </h5>
+                    <span class="badge bg-success pulse" id="activityIndicator">Live</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="activityFeed" style="max-height: 300px; overflow-y: auto;">
+                    <div class="text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading activity...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Auto-Scans -->
+<div class="card">
+    <div class="card-header bg-transparent">
+        <div class="d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">
+                <i class="bi bi-list-ul me-2"></i>
+                Recent Auto-Scans
+            </h5>
+            <div class="btn-group btn-group-sm">
+                <input type="radio" class="btn-check" name="scanFilter" id="filterAllScans" autocomplete="off" checked>
+                <label class="btn btn-outline-primary" for="filterAllScans">All</label>
+                
+                <input type="radio" class="btn-check" name="scanFilter" id="filterCompleted" autocomplete="off">
+                <label class="btn btn-outline-success" for="filterCompleted">Completed</label>
+                
+                <input type="radio" class="btn-check" name="scanFilter" id="filterFailed" autocomplete="off">
+                <label class="btn btn-outline-danger" for="filterFailed">Failed</label>
+            </div>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th><i class="bi bi-box me-1"></i>Image</th>
+                        <th><i class="bi bi-clock me-1"></i>Detected</th>
+                        <th><i class="bi bi-gear me-1"></i>Status</th>
+                        <th><i class="bi bi-speedometer2 me-1"></i>Duration</th>
+                        <th><i class="bi bi-eye me-1"></i>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="autoScansTable">
+                    <tr>
+                        <td colspan="5" class="text-center py-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading scans...</span>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Webhook Configuration Modal -->
+<div class="modal fade" id="webhookModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-webhook me-2"></i>
+                    Webhook Configuration
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>
+                    Configure Docker Hub webhooks for real-time scanning of pushed images.
+                </div>
+                
+                <h6>Docker Hub Webhook URL</h6>
+                <div class="input-group mb-3">
+                    <input type="text" class="form-control" id="webhookUrl" readonly>
+                    <button class="btn btn-outline-secondary" onclick="copyWebhookUrl()">
+                        <i class="bi bi-clipboard"></i>
+                    </button>
+                </div>
+                
+                <h6>Setup Instructions</h6>
+                <ol class="small">
+                    <li>Go to your Docker Hub repository settings</li>
+                    <li>Navigate to the "Webhooks" section</li>
+                    <li>Add a new webhook with the URL above</li>
+                    <li>Set the webhook secret to: <code id="webhookSecret">your-webhook-secret</code></li>
+                    <li>Enable the webhook for push events</li>
+                </ol>
+                
+                <div class="alert alert-warning">
+                    <strong>Security:</strong> Make sure to set the <code>WEBHOOK_SECRET</code> environment variable in your deployment.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let monitoringData = {};
+let refreshInterval;
+
+// Load monitoring data
+async function loadMonitoringData() {
+    try {
+        const response = await fetch('/monitor/status');
+        const data = await response.json();
+        
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        monitoringData = data;
+        updateDashboard();
+        
+    } catch (error) {
+        console.error('Error loading monitoring data:', error);
+        showError('Failed to load monitoring data: ' + error.message);
+    }
+}
+
+function updateDashboard() {
+    // Update status cards
+    updateStatusCards();
+    updateConfigurationPanel();
+    updateActivityFeed();
+    updateAutoScansTable();
+}
+
+function updateStatusCards() {
+    const data = monitoringData;
+    
+    // Monitoring status
+    const statusDiv = document.getElementById('monitoringStatus');
+    if (data.monitoring_enabled) {
+        statusDiv.innerHTML = `
+            <i class="bi bi-robot fs-1 mb-3 text-success"></i>
+            <h3 class="mb-1 text-success">ACTIVE</h3>
+            <p class="mb-0">Auto-Monitoring</p>
+            <small class="text-muted">Last check: ${new Date(data.last_check).toLocaleString()}</small>
+        `;
+    } else {
+        statusDiv.innerHTML = `
+            <i class="bi bi-pause-circle fs-1 mb-3 text-warning"></i>
+            <h3 class="mb-1 text-warning">DISABLED</h3>
+            <p class="mb-0">Auto-Monitoring</p>
+        `;
+    }
+    
+    // Queue stats
+    document.getElementById('queuedCount').textContent = data.queue_stats?.queued || 0;
+    document.getElementById('completedCount').textContent = data.queue_stats?.completed || 0;
+    document.getElementById('failedCount').textContent = data.queue_stats?.failed || 0;
+}
+
+function updateConfigurationPanel() {
+    const data = monitoringData;
+    
+    const configHtml = `
+        <div class="row g-3">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="mb-0">Monitoring Status</h6>
+                    <span class="badge ${data.monitoring_enabled ? 'bg-success' : 'bg-warning'}">
+                        ${data.monitoring_enabled ? 'Enabled' : 'Disabled'}
+                    </span>
+                </div>
+            </div>
+            
+            <div class="col-md-6">
+                <strong>Check Interval:</strong><br>
+                <span class="text-muted">${data.check_interval_minutes} minutes</span>
+            </div>
+            
+            <div class="col-md-6">
+                <strong>Known Images:</strong><br>
+                <span class="text-muted">${data.known_images_count} images</span>
+            </div>
+            
+            <div class="col-12">
+                <strong>Monitored Repositories:</strong><br>
+                <div class="mt-1">
+                    ${data.monitored_repositories.map(repo => 
+                        `<span class="badge bg-secondary me-1 mb-1">${repo}</span>`
+                    ).join('')}
+                </div>
+            </div>
+            
+            <div class="col-12 mt-3">
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-primary btn-sm" onclick="showWebhookConfig()">
+                        <i class="bi bi-webhook me-1"></i>
+                        Configure Webhooks
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="downloadConfig()">
+                        <i class="bi bi-download me-1"></i>
+                        Export Configuration
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('configPanel').innerHTML = configHtml;
+}
+
+function updateActivityFeed() {
+    const recentScans = monitoringData.recent_scans || [];
+    
+    const activityHtml = recentScans.length > 0 ? 
+        recentScans.slice(0, 5).map(scan => `
+            <div class="d-flex align-items-start mb-3 pb-2 border-bottom">
+                <div class="flex-shrink-0 me-3">
+                    ${getStatusIcon(scan.status)}
+                </div>
+                <div class="flex-grow-1">
+                    <div class="fw-semibold">${scan.image}</div>
+                    <small class="text-muted">
+                        ${scan.status === 'completed' ? 'Scanned' : 
+                          scan.status === 'failed' ? 'Failed' : 
+                          scan.status === 'processing' ? 'Scanning' : 'Queued'}
+                        • ${new Date(scan.queued_at).toLocaleString()}
+                    </small>
+                </div>
+                <div class="flex-shrink-0">
+                    <span class="badge bg-${getStatusColor(scan.status)}">${scan.status}</span>
+                </div>
+            </div>
+        `).join('') :
+        '<div class="text-center text-muted py-4"><i class="bi bi-inbox fs-1"></i><br>No recent activity</div>';
+    
+    document.getElementById('activityFeed').innerHTML = activityHtml;
+}
+
+function updateAutoScansTable() {
+    const recentScans = monitoringData.recent_scans || [];
+    
+    const tableHtml = recentScans.length > 0 ?
+        recentScans.map(scan => `
+            <tr data-status="${scan.status}">
+                <td>
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-robot text-primary me-2" title="Auto-detected"></i>
+                        <div>
+                            <div class="fw-semibold">${scan.image}</div>
+                            <small class="text-muted">Auto-discovered</small>
+                        </div>
+                    </div>
+                </td>
+                <td>
+                    <small class="text-muted">${new Date(scan.queued_at).toLocaleString()}</small>
+                </td>
+                <td>
+                    <span class="badge bg-${getStatusColor(scan.status)}">${scan.status}</span>
+                </td>
+                <td>
+                    ${scan.completed_at && scan.queued_at ? 
+                        Math.round((new Date(scan.completed_at) - new Date(scan.queued_at)) / 1000) + 's' : 
+                        '-'}
+                </td>
+                <td>
+                    ${scan.status === 'completed' && scan.scan_id ? 
+                        `<a href="/report/${scan.scan_id}" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-eye me-1"></i>View Report
+                        </a>` :
+                        scan.status === 'failed' ?
+                        `<button class="btn btn-sm btn-outline-danger" onclick="showError('${scan.error || 'Unknown error'}')">
+                            <i class="bi bi-exclamation-circle me-1"></i>Error
+                        </button>` :
+                        '-'}
+                </td>
+            </tr>
+        `).join('') :
+        '<tr><td colspan="5" class="text-center py-4 text-muted">No auto-scans yet</td></tr>';
+    
+    document.getElementById('autoScansTable').innerHTML = tableHtml;
+}
+
+function getStatusIcon(status) {
+    switch(status) {
+        case 'completed': return '<i class="bi bi-check-circle-fill text-success"></i>';
+        case 'failed': return '<i class="bi bi-x-circle-fill text-danger"></i>';
+        case 'processing': return '<i class="bi bi-gear-fill text-warning"></i>';
+        case 'queued': return '<i class="bi bi-clock-fill text-info"></i>';
+        default: return '<i class="bi bi-question-circle-fill text-muted"></i>';
+    }
+}
+
+function getStatusColor(status) {
+    switch(status) {
+        case 'completed': return 'success';
+        case 'failed': return 'danger';
+        case 'processing': return 'warning';
+        case 'queued': return 'info';
+        default: return 'secondary';
+    }
+}
+
+// Actions
+async function triggerManualCheck() {
+    const btn = document.getElementById('manualTriggerBtn');
+    const originalContent = btn.innerHTML;
+    
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-spinner spin me-1"></i>Checking...';
+    
+    try {
+        const response = await fetch('/monitor/trigger', { method: 'POST' });
+        const result = await response.json();
+        
+        if (result.error) {
+            throw new Error(result.error);
+        }
+        
+        showSuccess('Manual check triggered successfully');
+        setTimeout(loadMonitoringData, 2000); // Refresh after 2 seconds
+        
+    } catch (error) {
+        showError('Failed to trigger check: ' + error.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalContent;
+    }
+}
+
+function refreshMonitoringData() {
+    const btn = document.getElementById('refreshBtn');
+    const originalContent = btn.innerHTML;
+    
+    btn.innerHTML = '<i class="bi bi-arrow-clockwise spin me-1"></i>Refreshing...';
+    btn.disabled = true;
+    
+    setTimeout(() => {
+        loadMonitoringData().finally(() => {
+            btn.innerHTML = originalContent;
+            btn.disabled = false;
+        });
+    }, 500);
+}
+
+function showWebhookConfig() {
+    // Set webhook URL
+    const webhookUrl = `${window.location.origin}/monitor/webhook`;
+    document.getElementById('webhookUrl').value = webhookUrl;
+    
+    new bootstrap.Modal(document.getElementById('webhookModal')).show();
+}
+
+function copyWebhookUrl() {
+    const urlInput = document.getElementById('webhookUrl');
+    urlInput.select();
+    urlInput.setSelectionRange(0, 99999);
+    navigator.clipboard.writeText(urlInput.value).then(() => {
+        showSuccess('Webhook URL copied to clipboard!');
+    });
+}
+
+function downloadConfig() {
+    const config = {
+        monitoring_enabled: monitoringData.monitoring_enabled,
+        check_interval_minutes: monitoringData.check_interval_minutes,
+        monitored_repositories: monitoringData.monitored_repositories,
+        webhook_url: `${window.location.origin}/monitor/webhook`,
+        exported_at: new Date().toISOString()
+    };
+    
+    const dataStr = JSON.stringify(config, null, 2);
+    const dataBlob = new Blob([dataStr], {type: 'application/json'});
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(dataBlob);
+    link.download = `monitoring-config-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Filter functions
+function filterScans(status) {
+    const rows = document.querySelectorAll('#autoScansTable tr[data-status]');
+    rows.forEach(row => {
+        const rowStatus = row.getAttribute('data-status');
+        if (status === 'all' || rowStatus === status) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+
+// Utility functions
+function showError(message) {
+    const alertHtml = `
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <i class="bi bi-exclamation-circle me-2"></i>
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    `;
+    showAlert(alertHtml);
+}
+
+function showSuccess(message) {
+    const alertHtml = `
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <i class="bi bi-check-circle me-2"></i>
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    `;
+    showAlert(alertHtml);
+}
+
+function showAlert(alertHtml) {
+    const container = document.querySelector('.main-content');
+    const alertDiv = document.createElement('div');
+    alertDiv.innerHTML = alertHtml;
+    container.insertBefore(alertDiv.firstElementChild, container.firstElementChild.nextElementSibling);
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', function() {
+    // Load initial data
+    loadMonitoringData();
+    
+    // Set up auto-refresh
+    refreshInterval = setInterval(loadMonitoringData, 30000); // Refresh every 30 seconds
+    
+    // Filter listeners
+    document.getElementById('filterAllScans').addEventListener('change', () => filterScans('all'));
+    document.getElementById('filterCompleted').addEventListener('change', () => filterScans('completed'));
+    document.getElementById('filterFailed').addEventListener('change', () => filterScans('failed'));
+    
+    // Add pulse animation CSS
+    const style = document.createElement('style');
+    style.textContent = `
+        .pulse { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .spin { animation: spin 1s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    `;
+    document.head.appendChild(style);
+});
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', function() {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+    }
+});
+</script>
+
+{% endblock %}

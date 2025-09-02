@@ -15,6 +15,8 @@ from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from bson import ObjectId
+from automated_registry_monitor import create_monitoring_app, registry_monitor
+
 
 # ---------------- CONFIG ----------------
 load_dotenv()
@@ -658,10 +660,18 @@ def get_report(report_id):
     except Exception as e:
         return jsonify({"error": "Invalid report ID"}), 400
 
+from automated_registry_monitor import create_monitoring_app, registry_monitor
+
+# Initialize monitoring routes
+create_monitoring_app(app)
+
+
 if __name__ == "__main__":
     logger.info("Starting Enhanced Container Registry Vulnerability Scanner v2.1")
     logger.info(f"MongoDB URI configured: {bool(MONGO_URI)}")
     logger.info(f"Slack webhook configured: {bool(SLACK_WEBHOOK_URL)}")
     logger.info(f"Registry URL: {registry_client.registry_url}")
+    logger.info("Starting Enhanced Container Registry Scanner with Auto-Monitoring")
+
     
     app.run(host="0.0.0.0", port=5000, debug=True)
